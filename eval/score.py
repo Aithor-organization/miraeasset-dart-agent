@@ -119,7 +119,22 @@ def grade(item: dict, resp: dict) -> tuple[bool, str]:
         loser = item["meta"]["b"] if want == item["meta"]["a"] else item["meta"]["a"]
         if want not in answer:
             return False, f"정답 기업({want}) 미언급"
-        # 둘 다 언급될 수 있으므로 "더 크다" 판정 위치를 본다
+
+        # 🔴 명시적 승자 선언이 있으면 그것이 정본이다.
+        #    순서 휴리스틱만 쓰면 질문을 되풀이하는 도입부에 오탐한다 —
+        #    "삼성중공업과 SK텔레콤 중 … 더 큰 기업은 SK텔레콤입니다"는
+        #    **정답인데** 패자가 먼저 나온다는 이유로 오답 처리됐다 (실측).
+        for pat in (r"더\s*(?:큰|높은|많은|우위인)\s*(?:기업|회사|곳)(?:은|는|이)?\s*([^\s,.]+)",
+                    r"([^\s,.]+?)(?:이|가)\s*(?:더\s*)?(?:큽|높|많|우위)"):
+            m = re.search(pat, answer)
+            if m:
+                named = m.group(1)
+                if want in named:
+                    return True, "비교 정확 (명시 선언)"
+                if loser in named:
+                    return False, f"승자 오판 ({loser}을 더 크다고 선언)"
+
+        # 선언 문형이 없을 때만 순서로 추정한다
         if loser in answer and answer.index(loser) < answer.index(want):
             return False, f"순서 역전 의심 ({loser}이 먼저 언급됨)"
         return True, "비교 정확"

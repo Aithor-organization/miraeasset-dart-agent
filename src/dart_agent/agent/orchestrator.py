@@ -21,7 +21,9 @@ from ..retrieval.section_map import (parse_basis, parse_period, parse_scope,
 from ..store import alias
 from . import tools
 from . import pii
+from . import route_section
 from .abstention import Abstention, decide
+from .narrate import narrate
 from .verifier import strip_failing_sentences, verify
 
 # 질의 유형 (SPEC §3-3 T1~T6)
@@ -29,6 +31,7 @@ T_FACT, T_SECTION, T_COMPARE, T_EVENT, T_LIFECYCLE, T_TIMESERIES = (
     "T1_fact", "T2_section", "T3_compare", "T4_event", "T5_lifecycle", "T6_timeseries"
 )
 
+_CITE_ID = re.compile(r"\[(C\d+)\]")
 _CMP = re.compile(r"더\s*(큰|많은|높은|작은|적은|낮은)|비교|중\s*어(디|느)|순위|가장\s*(큰|많은|높은)")
 _DELTA = re.compile(r"증감|증가율|감소율|변화율|얼마나\s*(늘|줄|증가|감소)|대비")
 _EVENT_FUND = re.compile(r"자금\s*조달|유상증자|전환사채|CB|BW|EB|신주인수권|교환사채|자기주식")
@@ -86,6 +89,8 @@ class QuerySpec:
     basis: str | None = None
     metric_key: str | None = None
     paths: list[str] = field(default_factory=list)
+    # 목차 주소를 LLM이 골랐을 때의 사유 (think_trace 표시용). 규칙이 찾았으면 빈 문자열.
+    path_route_why: str = ""
     qtype: str = T_FACT
     # 전체 요구사항 (think_trace 표시용)
     requirements: list[str] = field(default_factory=list)
@@ -171,6 +176,17 @@ class Orchestrator:
         mdef = from_query(question)
         q.metric_key = mdef.key if mdef else None
         q.paths = paths_for(question)
+
+        # 🔴 규칙이 목차 주소를 못 찾았을 때만 HCX에게 묻는다.
+        #    규칙이 맞을 때 부르면 비용·429 위험만 늘고 정확도는 그대로다
+        #    (실측: 규칙 매칭 시 section 21/21). 실패 시에는 규칙이 구조적으로
+        #    약하다 — "배당"은 아예 규칙이 없었고, "사업**의** 개요"는 패턴이
+        #    가운데 조사에 막혔다. 둘 다 semantic matching이라 LLM이 맞다.
+        #    반환 주소는 route_section.CATALOG 화이트리스트로 걸러진다.
+        q.path_route_why = ""
+        if not q.paths and q.mentions_company and not q.metric_key:
+            q.paths, q.path_route_why = route_section.route(self.llm, question)
+
         q.qtype = self._classify(question, q)
         q.requirements, q.verify_requirements = self._requirements(question, q)
         return q
@@ -353,14 +369,24 @@ class Orchestrator:
         if ab is not None:
             trace.append(f"[4] Abstention 발동 — {ab.reason}")
             trace.append("[5] 결론\n    한계 고지 + 확인 가능 사실 제시")
+            ab_body = ab.render()
             return Answer(
                 question_id=question_id, question=question,
                 retrieved_context=ctx or "(검색 결과 없음)",
-                think_trace="\n".join(trace), answer=ab.render(),
-                citations=cites, confidence="low", abstained=True, abstain_reason=ab.reason,
+                think_trace="\n".join(trace), answer=ab_body,
+                citations=self._cited_only(ab_body, cites),
+                confidence="low", abstained=True, abstain_reason=ab.reason,
             )
 
         body = self._compose(q, facts, events, sections, search_hits, comp, chain, cites)
+
+        # 🔴 서술 계층 — 결정론 답변을 HCX가 다듬는다 (D1의 뒷 절반).
+        #    검증 **직전**에 두는 것이 핵심이다. 아래 V1~V5가 LLM 출력도 그대로 검사하므로,
+        #    LLM이 수치를 흘리면 여기서 잡히고 문장이 폐기된다.
+        #    narrate() 자체도 수치 동일성을 보고 어긋나면 템플릿을 되돌린다 (2중 방어).
+        #    (기권 경로는 위에서 이미 return했으므로 여기는 답변이 있는 경우뿐이다)
+        body, narr_why = narrate(self.llm, body, question=question)
+        trace.append(f"[3-b] 서술 — {narr_why}")
 
         # 검증 (V1~V5, 결정론)
         # 🔴 grounded에는 원문값뿐 아니라 **그 값에서 결정론적으로 파생된 표기**도 넣는다.
@@ -372,10 +398,18 @@ class Orchestrator:
             if f.value_krw is not None:
                 grounded.add(str(f.value_krw))
                 grounded.add(fmt_krw(f.value_krw))
+        by_kind_amt: dict[str, list[int]] = {}
         for e in events:
             if e.amount_krw is not None:
                 grounded.add(str(e.amount_krw))
                 grounded.add(fmt_krw(e.amount_krw))
+                by_kind_amt.setdefault(e.event_kind, []).append(e.amount_krw)
+        # 유형별 합계도 우리가 더한 값이라 근거가 있다 — 넣지 않으면 V1이
+        # 자기 시스템의 합계를 환각으로 오판해 정상 답변을 폐기한다.
+        for amts in by_kind_amt.values():
+            grounded.add(str(sum(amts)))
+            grounded.add(f"{sum(amts):,}")
+            grounded.add(fmt_krw(sum(amts)))
         if comp and comp.ok and comp.value is not None:
             grounded.add(f"{abs(comp.value):.1f}")
             grounded.add(f"{comp.value:.1f}")
@@ -402,7 +436,8 @@ class Orchestrator:
         return Answer(
             question_id=question_id, question=question,
             retrieved_context=ctx or "(검색 결과 없음)",
-            think_trace="\n".join(trace), answer=body, citations=cites,
+            think_trace="\n".join(trace), answer=body,
+            citations=self._cited_only(body, cites),
             confidence=("high" if (facts and rep.ok) else "medium" if rep.ok else "low"),
             verify_summary=rep.summary(),
         )
@@ -415,7 +450,8 @@ class Orchestrator:
             f"{f' [섹터 {q.sector}]' if q.sector else ''}\n"
             f"    지표: {q.metric_key or '(없음)'} · 기간: {q.years or q.year or '(미특정)'}"
             f" · 기준: {q.basis or '연결(기본)'}\n"
-            f"    유형: {q.qtype} · 섹션주소: {q.paths or '(없음)'}\n"
+            f"    유형: {q.qtype} · 섹션주소: {q.paths or '(없음)'}"
+            f"{f' ({q.path_route_why})' if q.path_route_why else ''}\n"
             f"    요구사항: {'; '.join(q.requirements)}"
         )
 
@@ -441,6 +477,21 @@ class Orchestrator:
         if len(lines) == 1:
             lines.append("    (결과 없음)")
         return "\n".join(lines)
+
+    @staticmethod
+    def _cited_only(answer: str, cites: list[dict]) -> list[dict]:
+        """답변이 **실제로 인용한** 근거만 남긴다.
+
+        🔴 실측 결함: "투자 의견은 제공하지 않습니다"라고 기권하면서 근거 6건을
+           달고 있었다 (`[C1] III-7-1` 등). 답변이 참조하지 않는 인용은 근거가
+           아니라 노이즈이고, "근거 없음"이라 말하면서 근거를 붙이는 건 자기모순이다.
+
+        평가지표 2(근거 완전성)는 **답변과 근거의 대응**을 보는 것이지 검색 결과를
+        많이 붙이는 걸 보는 게 아니다. 검색된 원문 전체는 `retrieved_context`에
+        그대로 남으므로 정보가 사라지지도 않는다.
+        """
+        used = set(_CITE_ID.findall(answer))
+        return [c for c in cites if c.get("id") in used]
 
     def _build_context(self, facts, events, sections, hits, chain):
         """retrieved_context — 평가지표 2(근거 완전성) 채점 대상 산출물 (D4)."""
@@ -535,14 +586,26 @@ class Orchestrator:
                 )
 
         if events:
+            # 🔴 이벤트 줄에도 인용을 단다. 없으면 수치를 제시하면서 근거가 0건이 된다
+            #    (실측: `_cited_only` 도입 후 계약금액 답변의 근거가 전부 사라졌다).
+            #    `_build_context`가 `events[:20]`을 그 순서대로 넣으므로 위치로 대응된다.
+            ev_cids = [c["id"] for c in cites if c.get("source") == "event"]
+            cid_at = {id(e): ev_cids[i] for i, e in enumerate(events[:len(ev_cids)])}
+
             by_kind: dict[str, list] = {}
             for e in events:
                 by_kind.setdefault(e.event_kind, []).append(e)
             lines.append(f"{q.corp_names[0] if q.corp_names else ''} 관련 공시 {len(events)}건을 유형별로 정리하면 다음과 같습니다.")
             for kind, group in list(by_kind.items())[:8]:
                 amts = [g.amount_krw for g in group if g.amount_krw]
-                total = f" 합계 {fmt_krw(sum(amts))}" if amts else ""
-                lines.append(f"- {kind}: {len(group)}건{total}")
+                # 🔴 "계약금액은 얼마인가"에 `1.3조원`만 답하면 정확성 채점에서 떨어진다.
+                #    반올림 표기는 읽기용이고, **정확값이 정본**이다 (D1). 둘 다 싣는다.
+                #    실측: 이 한 줄이 없어 골드셋 마지막 실패 1건이 남아 있었다
+                #    (기대 1,316,166,122,950 · 답변 "1.3조원" → 0.5% 허용치 밖).
+                total = f" 합계 {sum(amts):,}원({fmt_krw(sum(amts))})" if amts else ""
+                marks = "".join(f"[{c}]" for c in
+                                dict.fromkeys(cid_at[id(g)] for g in group if id(g) in cid_at))
+                lines.append(f"- {kind}: {len(group)}건{total} {marks}".rstrip())
 
         if chain and chain.nodes:
             term = [l for l in chain.linked]
@@ -558,13 +621,25 @@ class Orchestrator:
                 lines.append("해당 기간에 체결 이후 해지된 계약 공시는 확인되지 않습니다.")
 
         if sections and not facts:
-            for s in sections[:3]:
+            # 🔴 같은 회사·같은 목차를 보고서만 바꿔 3번 반복하지 않는다.
+            #    실측: "배당에 관한 사항" 질의에 분기보고서·[기재정정]분기보고서·
+            #    사업보고서의 **거의 동일한 원문**이 연달아 출력됐다. 정보량은 1개인데
+            #    분량은 3배라 읽는 사람에게는 손해다.
+            #    조회가 `base_year DESC, base_month DESC` 정렬이므로 **첫 항목이 최신**이다.
+            seen: set[tuple] = set()
+            for s in sections:
+                key = (s.get("corp_name"), s.get("path"))
+                if key in seen:
+                    continue
+                seen.add(key)
                 cid = next((c["id"] for c in cites if c["doc_id"] == s["doc_id"]
                             and c.get("section", "").startswith(s["path"])), "C1")
                 snippet = re.sub(r"\s+", " ", s["text"])[:400]
                 if pii.is_pii_section(s.get("path"), s.get("title")):
                     snippet = pii.mask(snippet)
                 lines.append(f"{s['corp_name']} {s['report_nm']} {s['title']}: {snippet} [{cid}]")
+                if len(seen) >= 3:
+                    break
 
         if not lines and hits:
             lines.append(

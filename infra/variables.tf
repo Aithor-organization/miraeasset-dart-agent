@@ -3,16 +3,25 @@
 # 🔴 access_key / secret_key는 여기 기본값을 넣지 말 것.
 #    환경변수로 주입한다 (terraform.tfvars.example 참조).
 
+# 🔴 `null` 기본값은 편의가 아니라 **키를 파일에 안 쓰기 위한 조건**이다.
+#    required로 두면 tfvars에 키를 적을 수밖에 없고, 그 파일은 평문이다.
+#    null이면 provider가 NCLOUD_ACCESS_KEY / NCLOUD_SECRET_KEY 환경변수로 폴백한다.
+#
+#    두 경로 다 된다:
+#      export NCLOUD_ACCESS_KEY=... NCLOUD_SECRET_KEY=...   (권장 — provider 폴백)
+#      export TF_VAR_access_key=... TF_VAR_secret_key=...   (변수 주입)
 variable "access_key" {
-  description = "NCP 액세스 키 (콘솔 → 마이페이지 → 인증키 관리)"
+  description = "NCP 액세스 키. 미지정 시 NCLOUD_ACCESS_KEY 환경변수 사용"
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "secret_key" {
-  description = "NCP 시크릿 키"
+  description = "NCP 시크릿 키. 미지정 시 NCLOUD_SECRET_KEY 환경변수 사용"
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "region" {

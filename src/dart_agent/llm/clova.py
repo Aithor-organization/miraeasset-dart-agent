@@ -29,11 +29,16 @@ content가 빈 문자열로 돌아온다**. HTTP는 200이라 오류로 보이�
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Any
 
 import httpx
 
 from .provider import LLMResponse
+from .ratelimit import MAX_RETRIES, Pacer, retry_wait
+
+log = logging.getLogger(__name__)
 
 _TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0)
 
@@ -49,6 +54,48 @@ class ClovaProvider:
         self._key = api_key
         self._base = base_url.rstrip("/")
         self.model = model
+        self._pacer = Pacer()
+
+    def _post_with_retry(self, payload: dict[str, Any]) -> httpx.Response:
+        """429/5xx를 헤더가 알려준 만큼 기다렸다가 재시도한다.
+
+        🔴 재시도가 없으면 **실패가 실패를 부른다** — 429는 즉시 반환되므로
+           다음 호출이 곧바로 또 두드리고, 리셋될 틈이 없다 (실측: 골드셋
+           177문항 중 60건 폐기. 정작 호출률은 한도의 1/5이었다).
+        """
+        last: Exception | None = None
+        for attempt in range(MAX_RETRIES + 1):
+            self._pacer.wait()                    # 한도에 닿기 전에 선제적으로 쉰다
+            try:
+                with httpx.Client(timeout=_TIMEOUT) as client:
+                    r = client.post(
+                        f"{self._base}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self._key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+            except httpx.HTTPError as exc:        # 네트워크 오류 — 호출자가 강등 처리
+                raise ClovaError(f"clova transport error: {exc}") from exc
+
+            if r.status_code < 400:
+                self._pacer.observe(r.headers)
+                return r
+
+            # 429(한도)와 5xx(일시 장애)만 재시도한다. 4xx는 재시도해도 같은 답이다.
+            if r.status_code != 429 and r.status_code < 500:
+                raise ClovaError(f"clova {r.status_code}: {r.text[:300]}")
+
+            last = ClovaError(f"clova {r.status_code}: {r.text[:300]}")
+            if attempt == MAX_RETRIES:
+                break
+            wait = retry_wait(r.headers, attempt)
+            log.info("clova %s — %.1fs 후 재시도 (%d/%d)",
+                     r.status_code, wait, attempt + 1, MAX_RETRIES)
+            time.sleep(wait)
+
+        raise last if last else ClovaError("clova: 재시도 소진")
 
     def chat(
         self,
@@ -71,21 +118,7 @@ class ClovaProvider:
         if response_format:
             payload["response_format"] = response_format
 
-        try:
-            with httpx.Client(timeout=_TIMEOUT) as client:
-                r = client.post(
-                    f"{self._base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self._key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-        except httpx.HTTPError as exc:  # 네트워크 오류는 호출자가 abstention으로 전환
-            raise ClovaError(f"clova transport error: {exc}") from exc
-
-        if r.status_code >= 400:
-            raise ClovaError(f"clova {r.status_code}: {r.text[:300]}")
+        r = self._post_with_retry(payload)
 
         data = r.json()
         choice = (data.get("choices") or [{}])[0]
