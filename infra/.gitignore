@@ -1,0 +1,18 @@
+# 🔴 실키가 들어간다
+terraform.tfvars
+*.auto.tfvars
+
+# 상태 파일 — 리소스 ID와 일부 민감값이 평문으로 들어간다
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# provider 바이너리 (수백 MB)
+.terraform/
+
+# 로그인 키
+*.pem
+
+# 계획 산출물
+*.tfplan
+crash.log

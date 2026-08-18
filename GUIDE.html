@@ -1,0 +1,2133 @@
+<title>공시 Agent 구축 가이드 — 미래에셋 AI Festival</title>
+
+<style>
+/* ─────────────────────────────────────────────────────────────
+   공시 Agent 구축 가이드 (상세판)
+   시각 언어: 인쇄된 공시 신고서 — 잉크, 괘선, 정정 도장, 그리고
+   틀리면 안 되는 숫자. 모노스페이스가 주소·수치·명령을 전담한다.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --ground:#EFF1F4; --surface:#FFFFFF; --surface-alt:#F6F7F9;
+  --rule:#D3D8DF; --rule-strong:#B4BCC7;
+  --text:#171B21; --text-soft:#4C5561; --text-faint:#79828F;
+  --ink:#23395B; --ink-soft:#4A648E; --ink-wash:#E3E8F1;
+  --verified:#1B6553; --verified-bg:#DFEDE8;
+  --estimated:#96650B; --estimated-bg:#F4EAD5;
+  --unknown:#625C77; --unknown-bg:#E7E5EE;
+  --trap:#A82F26; --trap-bg:#F6E1DE;
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono",
+          "Roboto Mono", "D2Coding", Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
+          "Noto Sans KR", "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
+  --measure: 70ch;
+  --rail: 5.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:#101319; --surface:#171B23; --surface-alt:#1C212A;
+    --rule:#2B3240; --rule-strong:#3C4557;
+    --text:#E4E8EE; --text-soft:#A8B2C0; --text-faint:#78828F;
+    --ink:#8FADDC; --ink-soft:#6C87B4; --ink-wash:#1B2434;
+    --verified:#6FC9AC; --verified-bg:#14302A;
+    --estimated:#D9A64A; --estimated-bg:#31280F;
+    --unknown:#A79FBE; --unknown-bg:#24212E;
+    --trap:#E5867A; --trap-bg:#351815;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#101319; --surface:#171B23; --surface-alt:#1C212A;
+  --rule:#2B3240; --rule-strong:#3C4557;
+  --text:#E4E8EE; --text-soft:#A8B2C0; --text-faint:#78828F;
+  --ink:#8FADDC; --ink-soft:#6C87B4; --ink-wash:#1B2434;
+  --verified:#6FC9AC; --verified-bg:#14302A;
+  --estimated:#D9A64A; --estimated-bg:#31280F;
+  --unknown:#A79FBE; --unknown-bg:#24212E;
+  --trap:#E5867A; --trap-bg:#351815;
+}
+:root[data-theme="light"] {
+  --ground:#EFF1F4; --surface:#FFFFFF; --surface-alt:#F6F7F9;
+  --rule:#D3D8DF; --rule-strong:#B4BCC7;
+  --text:#171B21; --text-soft:#4C5561; --text-faint:#79828F;
+  --ink:#23395B; --ink-soft:#4A648E; --ink-wash:#E3E8F1;
+  --verified:#1B6553; --verified-bg:#DFEDE8;
+  --estimated:#96650B; --estimated-bg:#F4EAD5;
+  --unknown:#625C77; --unknown-bg:#E7E5EE;
+  --trap:#A82F26; --trap-bg:#F6E1DE;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin:0; background:var(--ground); color:var(--text);
+  font-family:var(--sans); font-size:16px; line-height:1.75;
+  -webkit-font-smoothing:antialiased; word-break:keep-all;
+}
+
+.doc { max-width:80rem; margin:0 auto; padding:0 1.5rem 6rem; }
+
+/* ── 표제 ───────────────────────────────────────────────── */
+.masthead { border-bottom:2px solid var(--text); padding:3.5rem 0 1.25rem; margin-bottom:2.5rem; }
+.masthead .kicker {
+  font-family:var(--mono); font-size:.7rem; letter-spacing:.22em;
+  text-transform:uppercase; color:var(--ink); margin:0 0 1.1rem;
+}
+.masthead h1 {
+  font-size:clamp(2rem,5vw,3.1rem); line-height:1.12; letter-spacing:-.02em;
+  font-weight:800; margin:0 0 .7rem; text-wrap:balance;
+}
+.masthead .standfirst { max-width:var(--measure); color:var(--text-soft); font-size:1.06rem; margin:0 0 1.6rem; }
+.masthead .meta {
+  display:flex; flex-wrap:wrap; gap:.5rem 1.75rem;
+  font-family:var(--mono); font-size:.76rem; color:var(--text-faint);
+  padding-top:1rem; border-top:1px solid var(--rule);
+}
+.masthead .meta b { color:var(--text); font-weight:600; }
+
+.layout { display:grid; grid-template-columns:1fr; gap:2.5rem; }
+@media (min-width:64rem) {
+  .layout { grid-template-columns:14rem minmax(0,1fr); gap:3.5rem; align-items:start; }
+  .toc { position:sticky; top:1.5rem; max-height:calc(100vh - 3rem); overflow-y:auto; }
+}
+
+/* ── 목차 ───────────────────────────────────────────────── */
+.toc { font-size:.84rem; }
+.toc h2 {
+  font-family:var(--mono); font-size:.68rem; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--text-faint); margin:0 0 .9rem; padding-bottom:.6rem; border-bottom:1px solid var(--rule);
+}
+.toc ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.05rem; }
+.toc a {
+  display:grid; grid-template-columns:1.9rem 1fr; align-items:baseline; gap:.3rem;
+  padding:.32rem .4rem .32rem .55rem; color:var(--text-soft); text-decoration:none;
+  border-left:2px solid transparent; transition:color .12s, border-color .12s, background .12s;
+}
+.toc a:hover, .toc a:focus-visible { color:var(--ink); border-left-color:var(--ink); background:var(--ink-wash); }
+.toc a span { font-family:var(--mono); font-size:.72rem; color:var(--text-faint); font-variant-numeric:tabular-nums; }
+.toc a:hover span, .toc a:focus-visible span { color:var(--ink); }
+.toc .themebtn {
+  margin-top:1.4rem; width:100%; font-family:var(--mono); font-size:.7rem; letter-spacing:.1em;
+  padding:.5rem; cursor:pointer; background:var(--surface); color:var(--text-soft);
+  border:1px solid var(--rule); border-radius:2px;
+}
+.toc .themebtn:hover { border-color:var(--ink); color:var(--ink); }
+
+/* ── 섹션 ───────────────────────────────────────────────── */
+section { margin-bottom:4.5rem; scroll-margin-top:1.5rem; }
+.sec-head {
+  display:grid; grid-template-columns:var(--rail) 1fr; gap:0 1.25rem; align-items:baseline;
+  border-top:2px solid var(--text); padding-top:.9rem; margin-bottom:1.75rem;
+}
+.sec-head .num {
+  font-family:var(--mono); font-size:1.5rem; font-weight:700; color:var(--ink);
+  font-variant-numeric:tabular-nums; letter-spacing:-.03em; line-height:1;
+}
+.sec-head h2 { font-size:clamp(1.35rem,2.6vw,1.75rem); font-weight:750; letter-spacing:-.015em; margin:0; text-wrap:balance; }
+.sec-head p { grid-column:2; margin:.55rem 0 0; color:var(--text-soft); font-size:.95rem; max-width:var(--measure); }
+@media (max-width:40rem) {
+  .sec-head { grid-template-columns:1fr; gap:.35rem; }
+  .sec-head p, .sec-head h2 { grid-column:1; }
+}
+
+.body { max-width:var(--measure); }
+.body > * + * { margin-top:1.1rem; }
+.body p { margin:0; }
+.body h3 {
+  font-size:1.05rem; font-weight:700; margin:2.4rem 0 0; padding-bottom:.4rem;
+  border-bottom:1px solid var(--rule); letter-spacing:-.005em;
+}
+.body h4 { font-size:.94rem; font-weight:700; margin:1.6rem 0 0; color:var(--text); }
+.body ul, .body ol { margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.45rem; }
+.body li { padding-left:.2rem; }
+.body li > ul, .body li > ol { margin-top:.45rem; }
+.body a { color:var(--ink); text-decoration:underline; text-underline-offset:2px; }
+
+/* 폭 넓은 요소는 본문 폭을 넘어서도 된다 */
+.wide { max-width:min(100%, 60rem); }
+
+code {
+  font-family:var(--mono); font-size:.875em; background:var(--surface-alt);
+  border:1px solid var(--rule); padding:.06em .34em; border-radius:2px; word-break:break-all;
+}
+
+/* ── 코드 / 명령어 ───────────────────────────────────────── */
+.cmd { background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--ink); border-radius:2px; overflow:hidden; }
+.cmd .cmd-label {
+  font-family:var(--mono); font-size:.68rem; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--text-faint); padding:.45rem .85rem; border-bottom:1px solid var(--rule); background:var(--surface-alt);
+}
+.cmd pre { margin:0; padding:.85rem; overflow-x:auto; font-family:var(--mono); font-size:.79rem; line-height:1.7; color:var(--text); }
+.cmd pre .c { color:var(--text-faint); }
+.cmd pre .p { color:var(--ink); user-select:none; }
+.cmd pre .s { color:var(--verified); }
+.cmd pre .r { color:var(--trap); }
+
+/* ── 검증 등급 칩 ───────────────────────────────────────── */
+.chip {
+  display:inline-flex; align-items:center; gap:.3em; font-family:var(--mono);
+  font-size:.7rem; font-weight:600; letter-spacing:.04em; padding:.12em .5em;
+  border-radius:2px; white-space:nowrap; border:1px solid currentColor;
+}
+.chip.v { color:var(--verified);  background:var(--verified-bg); }
+.chip.e { color:var(--estimated); background:var(--estimated-bg); }
+.chip.u { color:var(--unknown);   background:var(--unknown-bg); }
+.chip.t { color:var(--trap);      background:var(--trap-bg); }
+
+/* ── 알림 ───────────────────────────────────────────────── */
+.note {
+  border:1px solid var(--rule); border-left:3px solid var(--ink-soft); background:var(--surface);
+  padding:.9rem 1.05rem; border-radius:2px; font-size:.93rem;
+}
+.note.trap { border-left-color:var(--trap); background:var(--trap-bg); }
+.note.trap strong { color:var(--trap); }
+.note.ok { border-left-color:var(--verified); background:var(--verified-bg); }
+.note .note-t {
+  font-family:var(--mono); font-size:.68rem; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--text-faint); display:block; margin-bottom:.4rem;
+}
+.note.trap .note-t { color:var(--trap); }
+.note.ok .note-t { color:var(--verified); }
+.note > p { margin:0; }
+.note > p + p { margin-top:.55rem; }
+.note ul { margin:.5rem 0 0; padding-left:1.2rem; display:flex; flex-direction:column; gap:.3rem; }
+
+/* ── 표 ─────────────────────────────────────────────────── */
+.tablewrap { overflow-x:auto; border:1px solid var(--rule); border-radius:2px; background:var(--surface); }
+table { border-collapse:collapse; width:100%; font-size:.87rem; min-width:30rem; }
+caption {
+  text-align:left; font-family:var(--mono); font-size:.68rem; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--text-faint); padding:.55rem .85rem;
+  border-bottom:1px solid var(--rule); background:var(--surface-alt);
+}
+th, td { padding:.5rem .85rem; text-align:left; border-bottom:1px solid var(--rule); vertical-align:top; }
+thead th {
+  font-size:.74rem; letter-spacing:.05em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:600; background:var(--surface-alt);
+}
+tbody tr:last-child td { border-bottom:none; }
+td.n, th.n { font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+td.k { font-family:var(--mono); font-size:.8rem; white-space:nowrap; }
+
+/* ── 수치 카드 ──────────────────────────────────────────── */
+.figs {
+  display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule);
+  border-radius:2px; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));
+}
+.fig { background:var(--surface); padding:.85rem .95rem; }
+.fig dt { font-family:var(--mono); font-size:.67rem; letter-spacing:.11em; text-transform:uppercase; color:var(--text-faint); margin-bottom:.3rem; }
+.fig dd { margin:0; font-family:var(--mono); font-size:1.28rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em; color:var(--text); }
+.fig dd small { font-size:.7rem; font-weight:500; color:var(--text-faint); letter-spacing:0; }
+
+/* ── 단계 ───────────────────────────────────────────────── */
+.steps { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1.8rem; }
+.steps > li { display:grid; grid-template-columns:2.1rem 1fr; gap:0 1rem; align-items:start; }
+.steps > li > .sn {
+  font-family:var(--mono); font-size:.82rem; font-weight:700; color:var(--surface);
+  background:var(--ink); width:1.65rem; height:1.65rem; border-radius:2px;
+  display:grid; place-items:center; font-variant-numeric:tabular-nums; margin-top:.15rem;
+}
+.steps > li > div { min-width:0; display:flex; flex-direction:column; gap:.65rem; }
+.steps h4 { margin:0; font-size:1rem; font-weight:700; }
+.steps p { margin:0; font-size:.93rem; }
+.steps ul { margin:0; padding-left:1.2rem; display:flex; flex-direction:column; gap:.35rem; font-size:.92rem; }
+
+/* ── 계층 ───────────────────────────────────────────────── */
+.layers { display:flex; flex-direction:column; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:2px; }
+.layer { background:var(--surface); padding:.9rem 1rem; display:grid; grid-template-columns:3.6rem 1fr; gap:.25rem 1rem; align-items:baseline; }
+.layer .lid { font-family:var(--mono); font-size:.78rem; font-weight:700; color:var(--ink); }
+.layer .lname { font-weight:700; font-size:.95rem; }
+.layer .ldesc { grid-column:2; font-size:.88rem; color:var(--text-soft); }
+@media (max-width:34rem) { .layer { grid-template-columns:1fr; } .layer .ldesc { grid-column:1; } }
+
+blockquote { margin:0; padding:.3rem 0 .3rem 1.1rem; border-left:2px solid var(--rule-strong); color:var(--text-soft); font-size:.93rem; }
+
+.footnote { margin-top:4rem; padding-top:1.2rem; border-top:1px solid var(--rule); font-size:.83rem; color:var(--text-faint); max-width:var(--measure); }
+.footnote p { margin:0; }
+.footnote p + p { margin-top:.55rem; }
+
+:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+@media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+</style>
+
+<div class="doc">
+
+  <header class="masthead">
+    <p class="kicker">제10회 2026 미래에셋증권 AI Festival · 공시 Agent · 상세판</p>
+    <h1>공시 Agent 구축 가이드</h1>
+    <p class="standfirst">
+      설계 한 줄: <strong>공시의 숫자는 조회하고 문장은 생성한다.</strong>
+      DART XML의 XBRL 인라인 태깅과 정형 필드에서 사실을 먼저 확정하고, LLM은 해석과 서술만 맡는다.
+      그래서 환각을 <em>탐지</em>하는 대신 <strong>발생 불가</strong>로 만든다.
+    </p>
+    <div class="meta">
+      <span>작성 <b>2026-08-11</b></span>
+      <span>제출 마감 <b>09-06 · D-26</b></span>
+      <span>평가 기간 <b>09.07 – 09.20</b></span>
+      <span>크레딧 <b>₩200,000</b> (~09.30)</span>
+      <span>코퍼스 <b>4,204건 / 70개사</b></span>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <nav class="toc" aria-label="목차">
+      <h2>목차</h2>
+      <ol>
+        <li><a href="#s1"><span>01</span>지금 상황</a></li>
+        <li><a href="#s2"><span>02</span>규칙</a></li>
+        <li><a href="#s3"><span>03</span>코퍼스와 함정</a></li>
+        <li><a href="#s4"><span>04</span>시스템 설계</a></li>
+        <li><a href="#s5"><span>05</span>도구·검증·기권</a></li>
+        <li><a href="#s6"><span>06</span>API 명세</a></li>
+        <li><a href="#s7"><span>07</span>로컬 세팅</a></li>
+        <li><a href="#s8"><span>08</span>CLOVA 실측</a></li>
+        <li><a href="#s9"><span>09</span>NCP 배포</a></li>
+        <li><a href="#s10"><span>10</span>터진 버그들</a></li>
+        <li><a href="#s11"><span>11</span>1등 전략</a></li>
+        <li><a href="#s12"><span>12</span>평가셋·일정</a></li>
+      </ol>
+      <button class="themebtn" type="button" id="themebtn">테마 전환</button>
+    </nav>
+
+    <main>
+
+      <!-- ══ 01 ═══════════════════════════════════════════ -->
+      <section id="s1">
+        <div class="sec-head">
+          <span class="num">01</span>
+          <h2>지금 상황</h2>
+          <p>시스템은 이미 전체 코퍼스로 돌아간다. 남은 건 평가셋과 배포다.</p>
+        </div>
+        <div class="body">
+
+          <dl class="figs">
+            <div class="fig"><dt>인덱싱 문서</dt><dd>4,204<small> / 4,204</small></dd></div>
+            <div class="fig"><dt>파싱 성공률</dt><dd>100<small>%</small></dd></div>
+            <div class="fig"><dt>섹션</dt><dd>112,797</dd></div>
+            <div class="fig"><dt>재무 사실</dt><dd>2,021,894</dd></div>
+            <div class="fig"><dt>테스트</dt><dd>130<small> / 130</small></dd></div>
+            <div class="fig"><dt>서버 상주</dt><dd>396<small>MB · 4GB의 10%</small></dd></div>
+          </dl>
+
+          <p>
+            질의를 던지면 실제로 답이 나온다. <strong>API 키 없이도 나온다</strong> —
+            수치·집계·비교·이벤트 추적이 전부 SQL이라 LLM이 필요 없게 설계했기 때문이다.
+            이건 우연이 아니라 §4의 D1(수치 결정론)에서 따라 나온 결과다.
+          </p>
+
+          <div class="tablewrap wide">
+            <table>
+              <caption>공개 사실 대조 — 전부 실제 서버 HTTP 응답</caption>
+              <thead><tr><th>질의</th><th class="n">응답</th><th>비고</th></tr></thead>
+              <tbody>
+                <tr><td>삼성전자 2024 연결 매출액</td><td class="n">300,870,903 백만원</td><td>300.9조</td></tr>
+                <tr><td>삼성전자 2024 연결 영업이익</td><td class="n">32,725,961 백만원</td><td>32.7조</td></tr>
+                <tr><td>삼성전자 2024 <em>별도</em> 영업이익</td><td class="n">12,428,700 백만원</td><td>연결/별도 구분 동작</td></tr>
+                <tr><td>SK하이닉스 2024 연결 영업이익</td><td class="n">23,467,319 백만원</td><td>23.5조</td></tr>
+                <tr><td>기아 2024 연결 매출액</td><td class="n">107,448,752 백만원</td><td>107.4조</td></tr>
+                <tr><td>POSCO홀딩스 2024 연결 매출액</td><td class="n">72,688,143,160,111 원</td><td>원 단위 원문</td></tr>
+                <tr><td>셀트리온 2024 연결 영업수익</td><td class="n">3,557,303,554,371 원</td><td>지표명 변형 대응</td></tr>
+                <tr><td>카카오 2024 연결 영업이익</td><td class="n">460,212,161,525 원</td><td>4,602.1억</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            마지막 두 건이 중요하다. <strong>셀트리온은 “매출액”이 아니라 “영업수익”으로 태깅</strong>돼 있고,
+            POSCO홀딩스·카카오는 백만원이 아니라 <strong>원 단위</strong>로 신고했다.
+            지표명 사전과 단위 정규화가 없으면 이 세 건은 조용히 실패한다.
+          </p>
+
+          <h3>남은 일 (우선순위 순)</h3>
+          <ol>
+            <li>
+              <strong>자체 평가셋 180문항</strong> — 가장 큰 공백.
+              지금은 정확도를 측정할 수단이 없어서, 무엇을 고쳐도 나아졌는지 알 수 없다.
+              남은 26일을 감으로 쓰게 된다. 설계는 §12.
+            </li>
+            <li>
+              <strong>NCP 배포</strong> — 평가기간 09.07–09.20 내내 떠 있어야 한다. 절차는 §9.
+            </li>
+            <li>
+              <strong>LLM 서술 계층 결정</strong> — 현재 오케스트레이터가 LLM을 호출하지 않는다.
+              붙일지 말지는 채점 항목을 보고 판단해야 한다 (§8 함정 B, §11).
+            </li>
+            <li>
+              <strong>CLOVA 단가 확인</strong> <span class="chip u">미확인</span> —
+              ₩200,000으로 평가기간을 버틸 수 있는지 아직 계산할 수 없다.
+            </li>
+          </ol>
+
+        </div>
+      </section>
+
+      <!-- ══ 02 ═══════════════════════════════════════════ -->
+      <section id="s2">
+        <div class="sec-head">
+          <span class="num">02</span>
+          <h2>규칙</h2>
+          <p>넘으면 실격이다. 설계 자유도보다 먼저 확인해야 하는 경계.</p>
+        </div>
+        <div class="body">
+
+          <div class="note trap">
+            <span class="note-t">실격 조항</span>
+            <p><strong>LLM은 HyperCLOVA X만 사용 가능하다. 그 외 모델 사용 시 평가대상에서 제외된다.</strong></p>
+            <p>
+              Gemini·GPT로 답변을 생성하면 아무리 잘 만들어도 채점받지 못한다.
+              단, <em>개발 도구</em>로 다른 모델을 쓰는 것은 무관하다 —
+              제출물의 <strong>런타임</strong>에 들어가면 안 된다는 뜻이다.
+              코드를 어떤 AI로 짜든 상관없지만, 서버가 답변을 만들 때 호출하는 LLM은 HCX여야 한다.
+            </p>
+          </div>
+
+          <div class="tablewrap wide">
+            <table>
+              <caption>요강 제약 전체</caption>
+              <thead><tr><th>구분</th><th>내용</th><th>우리 대응</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="chip t">필수</span></td>
+                  <td>LLM은 HyperCLOVA X만</td>
+                  <td>임베딩·리랭킹까지 CLOVA로 통일 (D6)</td>
+                </tr>
+                <tr>
+                  <td><span class="chip t">금지</span></td>
+                  <td>제공 코퍼스 외 데이터 (뉴스·리포트·위키)</td>
+                  <td>외부 HTTP는 <code>llm/</code> 계층 밖에서 호출 금지 — 테스트로 강제</td>
+                </tr>
+                <tr>
+                  <td><span class="chip t">금지</span></td>
+                  <td>OpenDART 등 외부 공시 API 실시간 호출</td>
+                  <td>전량 사전 인덱싱. 런타임에 외부 조회 없음</td>
+                </tr>
+                <tr>
+                  <td><span class="chip t">금지</span></td>
+                  <td>공시 근거 없는 미래 예측·투자 의견</td>
+                  <td>검증기 V4가 금지 표현을 문장 단위로 차단</td>
+                </tr>
+                <tr>
+                  <td>필수</td>
+                  <td>답변은 제공 공시 데이터를 근거로 생성</td>
+                  <td>D1 — 수치는 Fact Store에서 조회</td>
+                </tr>
+                <tr>
+                  <td>필수</td>
+                  <td>확인 불가 시 “확인되지 않음” 명시</td>
+                  <td>기권 8종 (§5)</td>
+                </tr>
+                <tr>
+                  <td>필수</td>
+                  <td>모든 답변에 근거 공시 표시</td>
+                  <td>검증기 V2가 미존재 인용을 차단</td>
+                </tr>
+                <tr>
+                  <td>환경</td>
+                  <td>NCP 또는 자유. 단 <strong>Public 망 통신 필수</strong></td>
+                  <td>NCP 공인 IP + HTTP 80 (도메인·인증서 불필요 — 08-11 공지)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>해석이 갈리는 지점 — 아직 안 풀렸다</h3>
+          <blockquote>
+            요강은 “LLM은 HyperCLOVA X만”이라고만 쓰고,
+            <strong>임베딩·리랭킹 모델이 “LLM”에 포함되는지, 전처리 단계에도 적용되는지는
+            명시하지 않는다.</strong>
+          </blockquote>
+          <div class="note trap">
+            <span class="note-t">08-11 질의 결과 — 답을 받지 못했다</span>
+            <p>
+              “전처리 과정에서 HyperCLOVA X 이외 모델을 써도 되는가”를 물었으나,
+              답변은 <strong>“공지사항을 참고 부탁드립니다”</strong>였다.
+              공지사항은 전처리/생성을 구분하지 않으므로 <strong>이 질문은 실질적으로 미해결</strong>이다
+              <span class="chip u">미확인</span>.
+            </p>
+            <p>
+              반면 <strong>형태소 분석기·규칙 기반 NLP 라이브러리는 제한이 없다고 명확히 답변</strong>됐다.
+              즉 “모델”과 “규칙 기반 도구”는 다르게 취급된다 — 경계는 여전히 모호하지만
+              규칙 기반 쪽은 안전지대에 있다.
+            </p>
+          </div>
+          <p>
+            <strong>다행히 우리 설계는 가장 엄격한 해석에서도 안전하다.</strong>
+          </p>
+          <ul>
+            <li><strong>전처리</strong> — lxml·BeautifulSoup·정규식·Kiwi. 전부 규칙 기반이며 모델을 쓰지 않는다.</li>
+            <li><strong>검색</strong> — BM25(통계) + 임베딩은 CLOVA bge-m3.</li>
+            <li><strong>생성</strong> — HCX-007만.</li>
+          </ul>
+          <p>
+            즉 <strong>미해결 질문의 어느 쪽 답이 나오든 우리는 영향을 받지 않는다.</strong>
+            이것이 설계 원칙 D6(플랫폼 네이티브)의 실질적 이익이다 —
+            해석 리스크를 설계 단계에서 제거해 두면 공지를 기다릴 필요가 없다.
+          </p>
+
+          <h3>제출물 — 공지로 4종이 됐다</h3>
+          <div class="tablewrap wide">
+            <table>
+              <caption>08-11 공지 반영</caption>
+              <thead><tr><th>제출물</th><th>요구사항</th><th>상태</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>소스코드</td>
+                  <td>🔴 <strong>Dockerfile은 필수 아님.</strong> 단 <strong>재현 가능한 환경 구성 정보</strong>는 필수 (<code>requirements.txt</code> 등)</td>
+                  <td><span class="chip v">준비됨</span> — 둘 다 보유</td>
+                </tr>
+                <tr>
+                  <td>기술제안서</td>
+                  <td>🔴 <strong>분량·양식 제한 없음</strong></td>
+                  <td><span class="chip v">준비됨</span> <code>proposal/</code></td>
+                </tr>
+                <tr>
+                  <td>평가용 API End-point</td>
+                  <td>🔴 <strong><code>README.md</code>에 명시 필수</strong></td>
+                  <td><span class="chip v">자리 확보</span> — README §0, 배포 후 IP 기입</td>
+                </tr>
+                <tr>
+                  <td>🆕 <strong>전처리 산출물</strong></td>
+                  <td>제출 대상. <strong>대용량은 클라우드 스토리지 링크로 대체</strong></td>
+                  <td><span class="chip u">미준비</span> — <code>dart.sqlite</code> 3.9GB → 링크 필요</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            마감은 <strong>09.06 23:59 (KST)</strong>로 확정됐다.
+            전처리 산출물이 새로 추가됐으므로 <strong>3.9GB를 올릴 스토리지를 미리 잡아둬야 한다</strong> —
+            마감 당일에 업로드하면 회선 사정에 인질이 된다.
+          </p>
+
+          <div class="note ok">
+            <span class="note-t">함께 확정된 것</span>
+            <p>
+              <strong>형태소 분석기·규칙 기반 NLP 라이브러리는 사용 제한이 없다.</strong>
+              Kiwi 형태소 BM25(§4)가 제약 없이 안전하다는 뜻이다 — 이 부분은 가정이 아니라 확정이 됐다.
+            </p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ══ 03 ═══════════════════════════════════════════ -->
+      <section id="s3">
+        <div class="sec-head">
+          <span class="num">03</span>
+          <h2>코퍼스와 함정</h2>
+          <p>일반적인 RAG 파이프라인이 조용히 틀리는 지점 일곱 가지. 전부 실측으로 확인했다.</p>
+        </div>
+        <div class="body">
+
+          <h3>코퍼스 구성</h3>
+          <div class="tablewrap">
+            <table>
+              <caption>manifest.jsonl 실측</caption>
+              <thead><tr><th>유형</th><th class="n">건수</th><th>내용</th></tr></thead>
+              <tbody>
+                <tr><td>periodic</td><td class="n">1,054</td><td>사업·반기·분기보고서. 법정 목차 구조. XBRL 인라인 태깅</td></tr>
+                <tr><td>exchange</td><td class="n">1,469</td><td>거래소공시 (계약·실적 등). <strong>정정률 43%</strong></td></tr>
+                <tr><td>holding</td><td class="n">1,083</td><td>주식등의 대량보유상황보고 (5% 룰)</td></tr>
+                <tr><td>major</td><td class="n">598</td><td>주요사항보고 (유상증자·전환사채 등)</td></tr>
+                <tr><td><strong>합계</strong></td><td class="n"><strong>4,204</strong></td><td>70개사 · 2023.01 – 2026.03</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>함정 1 — 확장자가 거짓말을 한다</h3>
+          <p>
+            거래소공시 1,469건은 <code>.xml</code> 확장자를 달고 있지만 <strong>내용은 HTML</strong>이다.
+            더 나쁜 건 인코딩이다. meta 태그는 <code>charset=euc-kr</code>을 선언하는데
+            <strong>실제 바이트는 UTF-8</strong>이다.
+          </p>
+          <p>
+            선언을 믿고 euc-kr로 디코딩하면 한글이 전부 깨진다. 예외가 나지 않고 <em>깨진 문자열</em>이
+            나오기 때문에, 파싱은 “성공”하고 검색만 조용히 실패한다. 코퍼스의 35%가 사라지는 셈이다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">대응 — parsers/exchange.py</div>
+<pre><span class="c"># 선언을 무시하고 바이트를 UTF-8로 강제 디코딩</span>
+raw = path.read_bytes()
+text = raw.decode("utf-8", errors="ignore")   <span class="c"># euc-kr 선언은 신뢰하지 않는다</span>
+soup = BeautifulSoup(text, "lxml")</pre>
+          </div>
+          <p>회귀 테스트 <code>test_exchange_korean_not_mojibake</code>가 이 경로를 지킨다.</p>
+
+          <h3>함정 2 — 정정 공시 43%</h3>
+          <p>
+            거래소공시 1,469건 중 <strong>정정 diff가 2,515건</strong> 존재한다.
+            같은 계약이 원본과 정정본으로 두 번 들어 있다는 뜻이다.
+          </p>
+          <p>
+            정정 체인을 해소하지 않고 <code>SELECT SUM(amount)</code>을 하면
+            <strong>같은 계약이 중복 계상</strong>된다. “2024년 총 계약 규모”를 물으면 실제의 1.4배가 나온다.
+            청킹 + 임베딩만 하는 파이프라인은 이 문제의 존재 자체를 알 수 없다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">대응 — 유효본만 집계</div>
+<pre>document 테이블에 is_effective 플래그
+  원본 → 정정본이 존재하면 is_effective = 0
+  정정본 → is_effective = 1
+
+<span class="c">모든 조회가 JOIN document d ON ... WHERE d.is_effective=1 을 거친다</span>
+<span class="c">FTS5 색인도 is_effective=1 문서만 담는다 (112,797 = 전량 일치)</span></pre>
+          </div>
+
+          <h3>함정 3 — 질의어와 조인 키가 다르다</h3>
+          <p>
+            사용자는 “현대차”라고 쓰지만 DB의 법인명은 “현대자동차”다.
+            “하이닉스”는 “SK하이닉스”, “포스코”는 “POSCO홀딩스”, “네이버”는 “NAVER”다.
+          </p>
+          <p>
+            <code>universe.csv</code>의 <code>listed_name</code> ↔ <code>corp_name</code> ↔
+            <code>corp_eng_name</code> ↔ <code>stock_code</code> <strong>4-way 별칭 테이블</strong>을
+            만들고, 자동 생성으로 안 잡히는 16종을 수기로 추가했다. 최종 별칭 232건, <strong>미연결 0건</strong>.
+          </p>
+          <div class="note">
+            <span class="note-t">부수 함정</span>
+            <p>
+              <code>corp_code</code>(8자리)와 <code>stock_code</code>(6자리)는 <strong>문자열</strong>이다.
+              pandas로 읽을 때 <code>dtype={'corp_code':str}</code>를 빠뜨리면 정수로 파싱되면서
+              <strong>선행 0이 유실</strong>된다. <code>00126380</code>이 <code>126380</code>이 되어 조인이 전멸한다.
+            </p>
+          </div>
+
+          <h3>함정 4 — XBRL 태깅률이 균일하지 않다</h3>
+          <p>
+            사업보고서는 재무제표가 XBRL로 인라인 태깅돼 있어 기계 추출이 쉽다. 그런데
+            <strong>태깅률이 보고서 종류마다 다르다</strong> — 사업보고서 약 60%, 반기·분기 약 28%.
+          </p>
+          <p>
+            XBRL만 믿으면 반기·분기 질의의 70%가 답을 못 찾는다. 그래서
+            <strong>표 파싱 폴백</strong>을 넣었다. <code>III-1 요약재무정보</code> 섹션을 앵커로
+            markdown 표를 파싱해 같은 <code>fin_fact</code> 스키마로 적재한다.
+            <code>source</code> 필드에 <code>xbrl</code> / <code>table</code>을 기록해 출처를 구분한다.
+          </p>
+
+          <h3>함정 5 — 단위가 섞여 있다</h3>
+          <p>
+            금액 단위가 <strong>원 / 천원 / 백만원</strong>으로 섞여 있고, 표본의 <strong>27%는 단위 표기가 아예 없다.</strong>
+          </p>
+          <p>
+            단위를 무시하고 숫자만 비교하면 <strong>1,000배 오차</strong>가 난다.
+            “A와 B 중 매출이 큰 곳은?” 같은 비교 문항이 전멸한다.
+            §1의 대조표에서 POSCO홀딩스가 <code>72,688,143,160,111 원</code>,
+            삼성전자가 <code>300,870,903 백만원</code>인 것이 바로 이 문제다 — 둘 다 원 단위로 정규화해야 비교된다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">대응 — numbers.py</div>
+<pre>value_krw      원 단위로 정규화한 정본 값
+raw_value      원문 그대로 (인용에 사용)
+raw_unit       원문 단위 표기
+unit_confidence  high | low   <span class="c">← 미표기 시 low</span>
+
+<span class="c"># unit_confidence=low인 값은 비교·집계에서 거부한다.</span>
+<span class="c"># 틀린 답보다 기권이 낫다는 판단 (D5).</span>
+compute("compare", [a, b])  → refused: "단위 불확정"</pre>
+          </div>
+          <p>
+            회계 표기 음수도 처리한다 — <code>(11,526,297)</code>은 <code>-11526297</code>이다.
+            괄호를 못 읽으면 적자가 흑자로 뒤집힌다.
+          </p>
+
+          <h3>함정 6 — 공시에 개인정보가 있다</h3>
+          <p>
+            <code>VIII-1 임원 및 직원 등의 현황</code> 섹션에는 임원의
+            <strong>생년월일과 성별</strong>이 실제로 들어 있다. 공시 문서니까 “공개 정보”지만,
+            질의에 그대로 실어 보내면 채점 항목 중 개인정보 보호에서 감점된다.
+          </p>
+          <p>
+            PII 게이트를 두 겹으로 만들었다. ① 질의 자체가 개인 식별정보를 요구하면 기권,
+            ② 섹션 본문을 반환할 때 생년월일·이메일·전화번호·주민번호 패턴을 마스킹.
+          </p>
+          <div class="note">
+            <span class="note-t">과잉 차단 방지</span>
+            <p>
+              <strong>“임원 수는?”·“임원 보수 총액은?”은 계속 답해야 한다.</strong>
+              회사 단위 정보까지 막으면 정확성과 근거 완전성에서 손해를 본다.
+              <code>is_pii_request()</code>가 개인 단위 요구만 골라내고, 회귀 테스트로 두 방향을 모두 고정했다.
+            </p>
+          </div>
+
+          <h3>함정 7 — 누적과 당기가 공존한다</h3>
+          <p>
+            이게 가장 발견하기 어렵고, 가장 조용히 틀린다.
+            반기·분기 보고서의 XBRL은 <strong>같은 지표를 두 번</strong> 담는다 —
+            누적(연초부터)과 당기(해당 3개월).
+          </p>
+          <p>
+            구분은 <code>ACONTEXT</code> 속성에 인코딩돼 있다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">ACONTEXT 구조</div>
+<pre>&lt;TE ACODE="..." ACONTEXT="CFY-dHYA-ifrs-full_ConsolidatedMember"&gt;
+
+  CFY   당기 / PFY 전기 / BPFY 전전기
+  d     duration (기간)  /  e  instant (시점)
+  HY    반기  ·  FY 연간  ·  FQ·TQ 분기
+  A     누적 (Accumulated)      ← 연초부터
+  Q     당기 (Quarter)          ← 해당 3개월만
+  ConsolidatedMember / SeparateMember   연결 / 별도</pre>
+          </div>
+          <div class="note trap">
+            <span class="note-t">실측 — 두 배 차이</span>
+            <p>
+              삼성전자 2025 반기 매출 — <strong>누적(dHYA) 153.7조</strong> vs <strong>당기(dHYQ) 74.6조</strong>.
+            </p>
+            <p>
+              구분 없이 <code>SELECT ... WHERE metric='revenue'</code>를 하면 둘 중 아무 값이나 나온다.
+              어느 쪽이 나오든 “정상 동작”처럼 보이고, 절반은 오답이다.
+            </p>
+          </div>
+          <p>
+            초기 구현은 정규식이 <code>FY</code>만 인식해서 반기·분기 컨텍스트를 통째로 버리고 있었다.
+            문서당 3,000~4,000건씩 파싱 실패가 나던 것을 고치면서 <code>period_scope</code> 필드를 추가했고,
+            적재 사실이 <strong>14,466건 → 34,956건</strong>으로 늘었다. 약 2만 건이 되살아난 것이다.
+          </p>
+
+        </div>
+      </section>
+
+      <!-- ══ 04 ═══════════════════════════════════════════ -->
+      <section id="s4">
+        <div class="sec-head">
+          <span class="num">04</span>
+          <h2>시스템 설계</h2>
+          <p>환각을 탐지하는 대신 발생 불가로 만드는 여섯 가지 원칙과 그 구현.</p>
+        </div>
+        <div class="body">
+
+          <h3>D1 — 수치 결정론</h3>
+          <p>
+            <strong>수치는 LLM이 생성하지 않는다.</strong> 이게 전체 설계의 축이다.
+          </p>
+          <p>
+            보통의 RAG는 문서를 프롬프트에 넣고 LLM에게 “이 문서를 보고 답해”라고 시킨다.
+            이 구조에서는 LLM이 숫자를 <em>읽어서 옮겨 쓰는</em> 셈이라, 자릿수를 틀리거나
+            비슷한 다른 숫자를 가져올 여지가 항상 남는다. 확률을 낮출 수는 있어도 0으로 만들 수는 없다.
+          </p>
+          <p>
+            우리는 경로 자체를 없앴다. 계산 도구 <code>compute()</code>의 피연산자는
+            <strong><code>FactHit</code> 객체만</strong> 받는다. 숫자 리터럴을 넣는 인터페이스가 존재하지 않는다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">tools.py — 리터럴 입력 경로가 없다</div>
+<pre>def compute(op: str, operands: list[FactHit]) -&gt; ComputeResult:
+    ...
+
+<span class="c"># 테스트가 이 계약을 고정한다</span>
+def test_compute_refuses_literal_numbers():
+    assert not compute("delta_pct", []).ok</pre>
+          </div>
+
+          <h3>D2 — 검색보다 주소</h3>
+          <p>
+            정기공시는 <strong>법정 목차</strong>를 따른다. 70개사 전부 동일한 구조다 —
+            <code>II-3 주요 투자 계획</code>, <code>III-2-2 연결 손익계산서</code>처럼
+            내용의 위치가 규격으로 정해져 있다.
+          </p>
+          <p>
+            그렇다면 “주요 투자 계획”을 물었을 때 임베딩 유사도로 <em>찾을</em> 이유가 없다.
+            <strong>주소로 직접 가면 된다.</strong> 검색은 주소로 닿지 않는 서술형에만 쓰는 폴백이다.
+          </p>
+          <p>
+            이 판단은 외부 근거도 있다 — AI-research-SKILLs의 <code>15-rag/pageindex</code>가
+            제시하는 “Vectorless RAG”가 같은 사상이다. 다만 거기 인용된 성능 수치는
+            영문 코퍼스·다른 모델 기준이라 그대로 전이되지 않는다 <span class="chip e">추정</span>.
+            차용한 것은 <em>수치가 아니라 구조</em>다.
+          </p>
+
+          <h3>D3 — 정정 우선</h3>
+          <p>
+            함정 2의 대응이 원칙으로 승격된 것이다. 조회 계층 전체가
+            <code>is_effective=1</code>을 통과하며, 정정 체인 해소는 인덱싱 시점에 끝난다.
+            런타임에 정정 여부를 판단하지 않는다 — 판단할 여지를 남기면 언젠가 빠뜨린다.
+          </p>
+
+          <h3>D4 — 근거는 로그가 아니라 산출물</h3>
+          <p>
+            응답의 <code>retrieved_context</code>와 <code>think_trace</code>는
+            디버깅용 부가 정보가 아니라 <strong>채점 대상</strong>이다.
+            요강의 평가 항목에 “근거 완전성”과 “추론 과정”이 명시돼 있다.
+          </p>
+          <p>
+            그래서 <code>think_trace</code>를 산문으로 쓰지 않고 구조로 만들었다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">think_trace 구조</div>
+<pre>[1] 질의 해석  기업=삼성전자(00126380) · 연도=2024 · 지표=매출액 · 기준=연결
+[2] 계획      fact_query → 검증 → 조립
+[3] 도구 실행  fact_query(corp=[00126380], metric=revenue, fy=[2024]) → 1건
+[4] 검증      V1 수치 3건 근거 확인 · V2 인용 C1 존재 · V4 금지표현 없음
+[5] 결론      300,870,903백만원 (출처 III-2-2 연결 손익계산서)</pre>
+          </div>
+
+          <h3>D5 — 추측보다 기권</h3>
+          <p>
+            근거가 부족하면 답을 만들지 않는다. 다만 <strong>거부만 하고 끝내지 않는다</strong> —
+            확인 가능한 사실과 역질문을 함께 준다. 상세는 §5.
+          </p>
+
+          <h3>D6 — 플랫폼 네이티브</h3>
+          <p>
+            §2의 해석 문제에 대한 안전판. 임베딩·리랭킹까지 CLOVA API로 통일한다.
+            잃는 것은 모델 선택의 자유고, 얻는 것은 <strong>어떤 해석에서도 실격되지 않는다</strong>는 확실성이다.
+          </p>
+
+          <h3>3계층 데이터</h3>
+          <p>질의 유형에 따라 담당 계층이 다르다. 이 분리가 D2를 물리적으로 강제한다.</p>
+          <div class="layers wide">
+            <div class="layer">
+              <span class="lid">L1</span><span class="lname">Fact Store (SQLite)</span>
+              <span class="ldesc">
+                XBRL 재무 사실 202만 건 · 계약/자금조달/지분 이벤트 3,150건 · 정정 체인 · 별칭 232건.
+                <strong>수치·집계·비교·순위</strong>를 담당한다. 여기서 답이 나오면 검색은 아예 돌지 않는다.
+              </span>
+            </div>
+            <div class="layer">
+              <span class="lid">L2</span><span class="lname">Section Store</span>
+              <span class="ldesc">
+                법정 목차 주소 트리 112,797개. <code>II-3</code>·<code>III-2-2</code> 같은 주소로
+                <strong>문서·섹션을 특정 조회</strong>한다. 질의 의도 → 주소 매핑이 19종 정의돼 있다.
+              </span>
+            </div>
+            <div class="layer">
+              <span class="lid">L3</span><span class="lname">검색 (폴백)</span>
+              <span class="ldesc">
+                BM25(Kiwi 형태소, SQLite FTS5 디스크 색인) + RRF(k=60) [+ bge-m3 벡터, 키 필요].
+                위 둘로 닿지 않는 <strong>서술형만</strong> 담당한다.
+              </span>
+            </div>
+          </div>
+
+          <h3>왜 FTS5인가 — 배포를 막던 문제</h3>
+          <p>
+            초기 구현은 BM25를 파이썬 객체로 메모리에 상주시켰다.
+            6,504섹션 스모크에서는 잘 돌았다. 그런데 전체 코퍼스로 외삽해 보니
+            <strong>NCP 권장 서버(4GB)에 올라가지 않는다</strong>는 게 드러났다.
+          </p>
+          <p>
+            원인을 찾아보니 텍스트가 아니었다. <code>Doc.text</code>는 17MB로 전체의 3%에 불과했다.
+            진짜 원인은 <strong>(문서, 용어) 쌍 824,744개</strong>가
+            <code>_tf</code>(Counter)와 <code>_postings</code>(dict)에 <em>이중으로</em> 저장되면서
+            파이썬 객체 오버헤드를 무는 것이었다 — 쌍당 약 684바이트.
+          </p>
+          <p>
+            해법은 AI-research-SKILLs의 <code>41-on-device-hybrid-search</code>에서 왔다.
+            그 스킬이 제시하는 구성이 정확히 <strong>SQLite FTS5 + sqlite-vec</strong>다.
+          </p>
+          <div class="tablewrap wide">
+            <table>
+              <caption>동일 조건 6,504섹션 · 별도 프로세스 RSS 실측</caption>
+              <thead><tr><th></th><th class="n">인메모리 BM25</th><th class="n">FTS5</th></tr></thead>
+              <tbody>
+                <tr><td>색인 상주 메모리</td><td class="n">+194 MB</td><td class="n"><strong>+6 MB</strong></td></tr>
+                <tr><td>로드 순간 피크</td><td class="n">561 MB</td><td class="n">없음 (오픈 21 ms)</td></tr>
+                <tr><td>질의 지연</td><td class="n">2.9 ms</td><td class="n">19.6 ms</td></tr>
+                <tr><td>색인 빌드</td><td class="n">67 s</td><td class="n">67 s (동일)</td></tr>
+                <tr><td>top-5 검색 일치</td><td class="n">기준</td><td class="n">92% (top-1은 8중 7)</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            전체 코퍼스로 가면 인메모리는 상주 <strong>3.4 GB</strong> / 로드 피크 <strong>9.7 GB</strong>가 된다
+            <span class="chip e">추정</span>. 상주만으로도 4GB에 빠듯한데,
+            <strong>피크가 기동 중에 프로세스를 죽인다.</strong>
+          </p>
+
+          <h4>한국어를 FTS5에 넣는 법</h4>
+          <p>
+            FTS5에 Kiwi 형태소 분석기를 직접 붙일 수는 없다 — 커스텀 토크나이저는 C API가 필요하다.
+            그래서 <strong>색인 시점에 Kiwi로 분해한 토큰을 공백으로 이어 붙여 저장</strong>하고
+            <code>unicode61</code> 토크나이저로 색인한다. 질의도 같은 분해를 거치므로
+            형태소 단위 매칭이 그대로 유지된다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">retrieval/fts_index.py</div>
+<pre>toks = tokenizer.tokens(f"{title} {body}")        <span class="c"># Kiwi 형태소 분해</span>
+conn.execute("INSERT INTO section_fts(rowid,toks) VALUES (?,?)",
+             (section_rowid, " ".join(toks)))     <span class="c"># 공백 결합 저장</span>
+
+<span class="c"># 조회 — 필터를 SQL로 밀어넣는다 (파이썬 후처리 없음)</span>
+SELECT s.section_id, ..., bm25(section_fts) AS sc
+FROM section_fts f
+JOIN section s   ON s.rowid = f.rowid
+JOIN document d  ON d.doc_id = s.doc_id
+WHERE section_fts MATCH ? AND d.is_effective=1
+  AND s.corp_code IN (...) AND d.base_year IN (...)
+ORDER BY sc LIMIT ?</pre>
+          </div>
+          <div class="note">
+            <span class="note-t">알아둘 제약</span>
+            <p>
+              FTS5의 <code>bm25()</code>는 <strong>k1=1.2 · b=0.75 고정</strong>이다.
+              설정 파일의 <code>bm25_k1</code>/<code>bm25_b</code>를 바꿔도 무시된다.
+              기본값과 같아서 실무상 무해하지만, 튜닝하려면 다른 방법을 찾아야 한다.
+            </p>
+          </div>
+
+          <h3>선별 색인 정책</h3>
+          <p>
+            모든 섹션을 같은 방식으로 색인하지 않는다. 볼륨의 47%를 차지하는
+            인명·계열사 나열 표는 <strong>제목만</strong> 색인한다 — 본문을 넣으면 노이즈만 늘고
+            검색 정확도가 떨어진다.
+          </p>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th><code>content_class</code></th><th>색인 대상</th></tr></thead>
+              <tbody>
+                <tr><td class="k">prose</td><td>제목 + 본문 (최대 60,000자)</td></tr>
+                <tr><td class="k">financial_stmt</td><td>제목 + 표 markdown (최대 20,000자)</td></tr>
+                <tr><td class="k">table_registry</td><td><strong>제목만</strong> — 본문 제외</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>RRF 융합</h3>
+          <p>
+            BM25 랭킹과 벡터 랭킹을 합칠 때 Reciprocal Rank Fusion을 쓴다.
+            점수 스케일이 다른 두 랭킹을 <em>순위만으로</em> 합치기 때문에 정규화가 필요 없다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">retrieval/bm25.py — AITHOR rag.py와 동일 수식</div>
+<pre>score(d) = Σ  1 / (k + rank_i(d))        k = 60</pre>
+          </div>
+          <p>
+            AITHOR-Agent-Framework의 <code>rag.py:_rrf_fuse</code>가 같은 상수(k=60)로 구현돼 있어
+            검증된 구현을 그대로 차용했다. 벡터 랭킹은 임베딩 프로바이더가 없으면
+            <strong>건너뛰고 BM25 단독으로 동작</strong>한다 — 키 없는 환경 대응.
+          </p>
+
+        </div>
+      </section>
+
+      <!-- ══ 05 ═══════════════════════════════════════════ -->
+      <section id="s5">
+        <div class="sec-head">
+          <span class="num">05</span>
+          <h2>도구 · 검증 · 기권</h2>
+          <p>Agent가 쓸 수 있는 도구 6종, 결정론 검증기 5종, 기권 사유 8종.</p>
+        </div>
+        <div class="body">
+
+          <h3>도구 6종</h3>
+          <p>
+            모든 도구는 값만 반환하지 않고 <strong>출처를 함께 반환</strong>한다.
+            이게 D4(근거는 산출물)를 도구 계약 수준에서 강제하는 방법이다.
+          </p>
+          <div class="tablewrap wide">
+            <table>
+              <caption>agent/tools.py</caption>
+              <thead><tr><th>도구</th><th>용도</th><th>반환</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="k">fact_query</td>
+                  <td>재무 수치 조회 (기업·지표·연도·연결/별도·기간범위)</td>
+                  <td><code>FactHit</code> — 값 + 문서ID + 접수번호 + 섹션주소 + 단위 + 출처(xbrl/table)</td>
+                </tr>
+                <tr>
+                  <td class="k">get_section</td>
+                  <td>법정 목차 주소로 섹션 본문 직접 조회 (D2)</td>
+                  <td>섹션 본문 + 주소 + PII 마스킹 적용</td>
+                </tr>
+                <tr>
+                  <td class="k">doc_search</td>
+                  <td>FTS5 검색 — 위 둘로 닿지 않을 때만</td>
+                  <td><code>SearchHit</code> 리스트 (점수 내림차순)</td>
+                </tr>
+                <tr>
+                  <td class="k">event_query</td>
+                  <td>계약·자금조달·지분 이벤트 조회. 종류별 패턴 매칭</td>
+                  <td><code>EventHit</code> — 유효본만 (D3)</td>
+                </tr>
+                <tr>
+                  <td class="k">trace_chain</td>
+                  <td>정정 체인 추적 — 원본↔정정본 관계 해소</td>
+                  <td>체인 전체 + 최종 유효본</td>
+                </tr>
+                <tr>
+                  <td class="k">compute</td>
+                  <td>증감률·비교·집계. <strong>피연산자는 FactHit만</strong> (D1)</td>
+                  <td><code>ComputeResult</code> — 실패 시 <code>refused_reason</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4>중복 해소 규칙</h4>
+          <p>
+            같은 지표가 여러 섹션에 나올 수 있다. 예를 들어 매출액은 본표(<code>III-2 연결재무제표</code>)에도,
+            주석(<code>III-3</code>)에도 나온다. 우선순위를 정해두지 않으면 조회할 때마다 다른 값이 나온다.
+          </p>
+          <ul>
+            <li><strong>본표 우선</strong> — <code>III-2</code>·<code>III-4</code>·<code>III-1</code>이 <code>III-3</code>(주석)보다 우선</li>
+            <li><strong>자기 연도 우선</strong> — FY2024를 물으면 2025년 보고서의 <em>전년 열</em>보다 2024년 보고서의 <em>당해 열</em>을 택한다</li>
+          </ul>
+          <p>
+            두 번째 규칙은 실제 버그에서 나왔다. FY2024 매출을 물었더니
+            2025년 사업보고서의 비교 열을 인용했는데, 값은 맞지만 <strong>인용 연도가 어긋나</strong> 보였다.
+          </p>
+
+          <h3>검증기 V1–V5 — LLM 호출 0건</h3>
+          <p>
+            답변을 만든 뒤 다섯 가지를 <strong>전부 결정론적으로</strong> 검사한다.
+            LLM에게 “이 답변 맞아?”라고 묻지 않는다 — 그건 같은 실수를 두 번 하는 구조다.
+          </p>
+          <div class="tablewrap wide">
+            <table>
+              <caption>agent/verifier.py</caption>
+              <thead><tr><th></th><th>검사</th><th>실패 시</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="k">V1</td>
+                  <td><strong>수치 근거</strong> — 답변의 모든 숫자가 근거 집합에 존재하는가</td>
+                  <td>해당 문장 삭제</td>
+                </tr>
+                <tr>
+                  <td class="k">V2</td>
+                  <td><strong>인용 존재</strong> — <code>[C3]</code>이 실제 인용 목록에 있는가</td>
+                  <td>해당 문장 삭제</td>
+                </tr>
+                <tr>
+                  <td class="k">V3</td>
+                  <td><strong>요구사항 충족</strong> — 질의가 요구한 지표·연도가 답변에 있는가</td>
+                  <td>불충분 표시</td>
+                </tr>
+                <tr>
+                  <td class="k">V4</td>
+                  <td><strong>금지 표현</strong> — 목표주가·전망·매수추천 등</td>
+                  <td>해당 문장 삭제</td>
+                </tr>
+                <tr>
+                  <td class="k">V5</td>
+                  <td><strong>자리표시자</strong> — <code>{{F1.value}}</code>가 치환되지 않고 남았는가</td>
+                  <td>생성 실패로 간주</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4>V1의 면제 규칙 — 여기가 까다롭다</h4>
+          <p>
+            “답변의 모든 숫자를 근거와 대조한다”를 순진하게 구현하면
+            <strong>연도·분기·날짜·섹션주소까지 검증 대상이 된다.</strong>
+            <code>2024년</code>의 2024, <code>2026-03-31</code>의 03과 31, <code>III-2-2</code>의 숫자들이
+            전부 “근거 없는 수치”로 잡힌다.
+          </p>
+          <p>
+            그래서 면제 패턴을 두는데, <strong>순서가 중요하다</strong>.
+            연도 패턴을 날짜보다 먼저 매칭시키면 <code>2026-03-31</code>에서 <code>2026</code>만 먹고
+            <code>03</code>·<code>31</code>이 남는다. 날짜 패턴을 먼저 놓아야 한다.
+          </p>
+          <div class="note trap">
+            <span class="note-t">실제로 겪은 V1 오탐</span>
+            <p>
+              파생 표기가 근거 집합에 없어서 <strong>자기 자신의 결정론적 계산 결과를 환각으로 판정</strong>한 적이 있다.
+              <code>300,870,903백만원</code>을 사람이 읽기 좋게 <code>300.9조원</code>으로 바꿔 쓴 것이
+              근거에 없다는 이유로 문장째 삭제됐고, 답변이 비어버리자 V3까지 연쇄 실패했다.
+            </p>
+            <p>
+              고친 방법: 포맷 함수의 출력, <code>str(value_krw)</code>, 계산 결과, 이벤트 건수를
+              모두 근거 집합에 <strong>미리 넣어둔다</strong>. 검증기를 느슨하게 만든 게 아니라,
+              <em>결정론적으로 파생된 값</em>도 근거임을 명시한 것이다.
+            </p>
+          </div>
+
+          <h3>기권 8종</h3>
+          <p>
+            근거가 부족할 때 그럴듯하게 지어내면 정확성과 거부 능력을 <strong>동시에</strong> 잃는다.
+            사유를 코드로 구분해 응답에 실어 보낸다.
+          </p>
+          <div class="tablewrap wide">
+            <table>
+              <caption>agent/abstention.py + pii.py</caption>
+              <thead><tr><th>사유 코드</th><th>발동 조건</th></tr></thead>
+              <tbody>
+                <tr><td class="k">forbidden_prediction</td><td>미래 예측·목표주가·투자 의견 요구</td></tr>
+                <tr><td class="k">out_of_universe</td><td>70개사 밖 기업 (또는 존재하지 않는 기업)</td></tr>
+                <tr><td class="k">out_of_period</td><td>보유 범위(2023.01–2026.03) 밖 기간</td></tr>
+                <tr><td class="k">ambiguous</td><td>기업·지표를 특정할 수 없음</td></tr>
+                <tr><td class="k">no_metric</td><td>요청 지표를 보유 재무 항목으로 매핑 불가</td></tr>
+                <tr><td class="k">no_evidence</td><td>검색 점수가 임계값(0.35) 미달</td></tr>
+                <tr><td class="k">low_unit_confidence</td><td>비교 질의인데 피연산자 단위가 불확정 (함정 5)</td></tr>
+                <tr><td class="k">unsupported_doctype</td><td>뉴스·애널리스트 리포트 등 코퍼스 밖 출처 요구</td></tr>
+                <tr><td class="k">pii_request</td><td>임원 생년월일·성별·연락처 등 개인 식별정보 요구</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4>기권도 답변이다</h4>
+          <p>
+            “확인할 수 없습니다”로 끝내지 않는다. <strong>확인 가능한 사실</strong>과
+            <strong>역질문</strong>을 함께 준다 — 채점 항목의 거부 능력은
+            “거부했는가”가 아니라 “적절히 대응했는가”로 읽는 게 맞다고 판단했다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">실제 응답 예 — "삼성전자 주가 오를까요?"</div>
+<pre>공시에 근거가 없는 미래 예측이나 투자 의견은 제공하지 않습니다.
+
+확인 가능한 사실:
+  · 2024년 매출액 300.9조원 [C1]
+  · 2024년 영업이익 32.7조원 [C2]
+
+다음을 알려주시면 정확히 답변할 수 있습니다:
+  · 어떤 재무 지표를 확인하고 싶으신가요?
+  · 특정 기간(연도·분기)을 지정해 주시겠습니까?</pre>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ══ 06 ═══════════════════════════════════════════ -->
+      <section id="s6">
+        <div class="sec-head">
+          <span class="num">06</span>
+          <h2>API 명세</h2>
+          <p>제출물 3종 중 하나. 계약 4필드는 어떤 경우에도 존재해야 한다.</p>
+        </div>
+        <div class="body">
+
+          <h3>엔드포인트</h3>
+          <div class="note ok">
+            <span class="note-t">공지로 확정된 호출 규격 (08-11)</span>
+            <ul>
+              <li><strong>순차 호출</strong> — 팀당 1건씩. <strong>동시 요청 없음</strong>이 공식 확인됐다.</li>
+              <li><strong>타임아웃 300초</strong> — 문항당. 아래 §전략 참조.</li>
+              <li><strong>재시도 2회</strong> — 타임아웃 또는 5xx 발생 시.</li>
+              <li><strong>경로 <code>/answer</code> 고정</strong> · <strong>헤더 없음</strong>(인증 포함).</li>
+              <li><strong>빈 문자열 반환 무방</strong> · <code>think_trace</code> <strong>형식 규정 없음</strong>. 단 전 필드 string 타입.</li>
+              <li>필드 길이 제한 없음. 단 극단적으로 길면 초과분이 평가에 반영되지 않을 수 있다.</li>
+            </ul>
+          </div>
+
+          <div class="cmd">
+            <div class="cmd-label">요청</div>
+<pre>GET /answer?question_id={id}&amp;question={질의}
+     <span class="c">↑ 경로 고정 · 표준 포트(80/443)라 포트 표기 생략</span>
+
+  question_id   string   주최측 문항 식별자
+  question      string   자연어 질의 (URL 인코딩)
+
+<span class="c">부가 엔드포인트 (우리 운영용 — 평가 대상 아님)</span>
+GET /health     생존 확인 — 컨테이너 HEALTHCHECK가 사용
+GET /ready      준비 상태 + 강등 사항(notes)
+GET /meta       인덱스 통계 (테이블별 건수)</pre>
+          </div>
+
+          <div class="cmd">
+            <div class="cmd-label">응답 200</div>
+<pre>{
+  "question_id":  "Q-001",
+  "question":     "삼성전자의 2024년 연결기준 매출액은 얼마인가?",
+
+  "retrieved_context":
+    "[C1] 삼성전자 사업보고서 (2024.12) · 접수번호 20250311001085 · III-2-2\n
+           매출액 (주29) 300,870,903 백만원 (연결, FY, xbrl)",
+
+  "think_trace":  "[1] 질의 해석 … [2] 계획 … [3] 도구 실행 … [4] 검증 … [5] 결론",
+
+  "answer":       "삼성전자의 2024년 연결기준 매출액은
+                   300,870,903백만원(300.9조원)입니다 [C1].",
+
+  <span class="c">// ── 이하 부가 필드 (주최측 명시 4필드 외 확장) ──</span>
+  "citations": [{ "id":"C1", "doc_id":"...", "rcept_no":"...",
+                  "section":"III-2-2", "source":"xbrl" }],
+  "confidence":     "high",        <span class="c">// high | medium | low</span>
+  "abstained":      false,
+  "abstain_reason": null,          <span class="c">// §5의 사유 코드</span>
+  "verification":   "검증 통과",
+  "latency_ms":     9
+}</pre>
+          </div>
+
+          <h3>🔴 300초 타임아웃이 전략을 바꾼다</h3>
+          <p>
+            우리 현재 응답은 워밍 후 <strong>1–26 ms</strong>다. 주어진 예산은 <strong>300,000 ms</strong>.
+            <strong>약 1만 배의 여유</strong>가 있다.
+          </p>
+          <div class="tablewrap">
+            <table>
+              <caption>300초로 살 수 있는 것</caption>
+              <thead><tr><th>작업</th><th class="n">예상 소요</th><th>가능 여부</th></tr></thead>
+              <tbody>
+                <tr><td>현재 결정론 경로</td><td class="n">~26 ms</td><td>기준</td></tr>
+                <tr><td>HCX 서술 생성 1회</td><td class="n">3–10 초</td><td>여유 있음</td></tr>
+                <tr><td>RAG Reasoning 인용 검증</td><td class="n">3–8 초</td><td>여유 있음</td></tr>
+                <tr><td>다단 검색 + 재질의 + 자기검증</td><td class="n">30–60 초</td><td>여전히 1/5</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            즉 <strong>§8 함정 B(오케스트레이터가 LLM 미호출)를 고칠 시간 예산이 충분하다.</strong>
+            속도 때문에 서술 계층을 포기할 이유가 사라졌다 — 남은 판단은 “붙이면 점수가 오르는가”뿐이다.
+          </p>
+
+          <div class="note trap">
+            <span class="note-t">설계 결정 — 500을 반환하지 않는다</span>
+            <p>
+              <strong>어떤 입력에도 HTTP 500이 나가지 않는다.</strong>
+              모든 내부 예외를 잡아 기권 응답 + 200으로 변환한다.
+              평가 중 한 문항의 예외가 <em>서버 장애로 보이면</em> 나머지 문항까지 잃기 때문이다.
+              빈 질의만 400을 반환하며, 그 경우에도 <strong>계약 필드는 채워서</strong> 보낸다.
+            </p>
+            <p>
+              ⚠️ <strong>재시도 2회가 공지되면서 이 결정에 반대 논거가 생겼다.</strong>
+              500을 내면 2번 더 기회를 받는데, 200을 내면 그 답이 확정된다.
+              일시적 장애(예: CLOVA 순간 불통)에서는 500이 유리할 수 있다.
+            </p>
+            <p>
+              <strong>결론은 “둘 다 아니다”.</strong> LLM 호출이 실패하면 500도 기권도 아니라
+              <strong>결정론 템플릿으로 강등</strong>하는 것이 두 선택지보다 항상 낫다 —
+              수치·근거는 SQL에서 이미 확보돼 있으므로 답변의 핵심은 살아남는다.
+              현재 구조가 이미 그렇게 되어 있고(§7 강등 표), LLM 계층을 붙일 때도 이 원칙을 유지한다.
+            </p>
+          </div>
+
+          <h3>계약 불변식</h3>
+          <ul>
+            <li><code>question_id</code> · <code>question</code> · <code>retrieved_context</code> · <code>think_trace</code> · <code>answer</code> — <strong>항상 존재하고 항상 문자열</strong></li>
+            <li><code>answer</code>는 <strong>빈 문자열이 될 수 없다</strong> — 기권도 문장으로 답한다</li>
+            <li>동일 <code>(question_id, question)</code> 재요청은 캐시 반환 — 재현성 + 비용</li>
+          </ul>
+          <p>
+            마지막 항목은 §10에서 다룰 버그의 결과다. 원래 <code>question_id</code>만으로 캐싱했는데,
+            평가측이 같은 id로 다른 문항을 보내면 이전 답변이 그대로 나가는 구조였다.
+          </p>
+
+          <h3>환경변수</h3>
+          <div class="tablewrap wide">
+            <table>
+              <thead><tr><th>변수</th><th>기본값</th><th>설명</th></tr></thead>
+              <tbody>
+                <tr><td class="k">CLOVA_API_KEY</td><td>(없음)</td><td>없으면 <strong>StubProvider로 폴백</strong>하고 서버는 계속 동작</td></tr>
+                <tr><td class="k">CLOVA_BASE_URL</td><td class="k">…/v1/openai</td><td>OpenAI 호환 엔드포인트</td></tr>
+                <tr><td class="k">CLOVA_CHAT_MODEL</td><td class="k">HCX-007</td><td>128K ctx · function calling · structured output · thinking</td></tr>
+                <tr><td class="k">CLOVA_EMBEDDING_MODEL</td><td class="k">bge-m3</td><td>8,192 tokens / 1,024 dim</td></tr>
+                <tr><td class="k">DART_CORPUS_ROOT</td><td class="k">docs/3.공시/corpus</td><td>코퍼스 경로 (인덱싱 시에만 필요)</td></tr>
+                <tr><td class="k">DART_DB_PATH</td><td class="k">index/dart.sqlite</td><td>Fact Store + FTS5 색인</td></tr>
+                <tr><td class="k">DART_SEARCH_THRESHOLD</td><td class="k">0.35</td><td>기권 판정 임계값</td></tr>
+                <tr><td class="k">PORT / HOST</td><td class="k">8000 / 0.0.0.0</td><td></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ══ 07 ═══════════════════════════════════════════ -->
+      <section id="s7">
+        <div class="sec-head">
+          <span class="num">07</span>
+          <h2>로컬 세팅</h2>
+          <p>의존성 설치부터 첫 답변까지. 키가 없어도 끝까지 동작한다.</p>
+        </div>
+        <div class="body">
+
+          <ol class="steps">
+            <li><span class="sn">1</span><div>
+              <h4>의존성 설치</h4>
+              <p>Python 3.11 기준. 전 항목 버전 고정이라 재현된다.</p>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> cd miraeassetfesta
+<span class="p">$</span> python3 -m pip install -r requirements.txt</pre>
+              </div>
+              <ul>
+                <li><code>lxml</code> — DART XML 파싱. C 확장이라 빌드 헤더가 필요하다 (Dockerfile에 반영)</li>
+                <li><code>beautifulsoup4</code> — 거래소공시 HTML (함정 1)</li>
+                <li><code>kiwipiepy</code> — 한국어 형태소. <strong>순수 Python 휠</strong>이라 MeCab 같은 시스템 의존이 없다</li>
+                <li><code>httpx</code> — CLOVA 호출 전용. <code>llm/</code> 계층 밖 사용 금지</li>
+              </ul>
+              <div class="note">
+                <span class="note-t">강등 동작</span>
+                <p>
+                  <code>kiwipiepy</code>가 없으면 문자 n-gram으로 자동 강등된다.
+                  서버는 계속 돌지만 검색 품질이 떨어지고, <strong>그 사실이 로그와 <code>/ready</code>에 표시된다</strong>.
+                  조용히 나빠지는 것이 가장 나쁜 실패 모드라 침묵하지 않게 만들었다.
+                </p>
+              </div>
+            </div></li>
+
+            <li><span class="sn">2</span><div>
+              <h4>인덱스 빌드</h4>
+              <p>먼저 60건 스모크로 파이프라인을 확인한 뒤 전량을 돌리는 것이 안전하다.</p>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="c"># 스모크 — 유형별 60건, 약 1분</span>
+<span class="p">$</span> python3 scripts/build_index.py --limit 60 --rebuild
+
+<span class="c"># 전량 4,204건</span>
+<span class="p">$</span> python3 scripts/build_index.py --rebuild
+
+<span class="c"># 기존 색인을 보존하며 새 경로에 빌드 (안전)</span>
+<span class="p">$</span> python3 scripts/build_index.py --db index/dart_full.sqlite --rebuild</pre>
+              </div>
+              <p>빌드 단계는 다음과 같이 진행된다.</p>
+              <div class="cmd">
+                <div class="cmd-label">실제 출력 (전량)</div>
+<pre><span class="s">✅</span> 기업 70개 · 별칭 232건 (수기 16, 미연결 0)
+   … 4200/4204 (182s, 23.1 doc/s)
+<span class="s">✅</span> 테이블: {company:70, document:4204, section:112797,
+           fin_fact:2021894, contract_event:1469,
+           capital_event:598, holding_event:1083,
+           correction_diff:2515}
+<span class="s">✅</span> FTS5 색인 112,797 섹션 · 토크나이저=kiwi · 빌드 1737s
+<span class="s">✅</span> 파싱 성공률 100.0% (게이트 98%)</pre>
+              </div>
+              <p>
+                파싱이 3분, FTS5 색인이 29분이다. 총 32분.
+                파싱 성공률이 98% 아래면 스크립트가 <strong>exit 1</strong>로 실패한다 —
+                조용히 절반만 들어간 인덱스로 배포되는 것을 막는 게이트다.
+              </p>
+            </div></li>
+
+            <li><span class="sn">3</span><div>
+              <h4>서버 실행</h4>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> python3 run_server.py        <span class="c"># http://0.0.0.0:8000</span></pre>
+              </div>
+              <div class="cmd">
+                <div class="cmd-label">정상 기동 로그</div>
+<pre>INFO FTS5 색인 사용: index/dart.sqlite (112797 섹션)
+INFO ready in 0.7s · sections=112797 · tokenizer=kiwi · llm=stub</pre>
+              </div>
+              <div class="note trap">
+                <span class="note-t">이 로그가 보이면 위험</span>
+                <p>
+                  <code>BM25 캐시 로드</code>가 찍히면 <strong>레거시 인메모리 경로</strong>로 떨어진 것이다.
+                  전체 코퍼스에서 4GB 서버는 이 경로로 죽는다. <code>build_index.py</code>를 다시 돌려
+                  FTS5 색인을 만들어야 한다.
+                </p>
+              </div>
+            </div></li>
+
+            <li><span class="sn">4</span><div>
+              <h4>첫 질의</h4>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> curl -G localhost:8000/answer \
+    --data-urlencode "question_id=Q-001" \
+    --data-urlencode "question=삼성전자의 2024년 연결기준 매출액은?"</pre>
+              </div>
+              <p>
+                <code>300,870,903백만원(300.9조원) [C1]</code>이 나오면 파이프라인 전체가 살아있다.
+                <strong>API 키 없이도 이 값이 나온다.</strong>
+              </p>
+            </div></li>
+
+            <li><span class="sn">5</span><div>
+              <h4>API 키 넣기</h4>
+              <p>
+                키는 채팅·이슈·커밋에 붙여넣지 말고 파일로 넣는다.
+                <code>.env</code>는 이미 <code>.gitignore</code>에 등록돼 있다.
+              </p>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> echo 'CLOVA_API_KEY=nv-발급받은키' &gt; .env
+<span class="p">$</span> chmod 600 .env</pre>
+              </div>
+              <p>
+                발급 경로: NCP 콘솔 → Services → AI Services → CLOVA Studio →
+                이용 신청(별도 계약 불요) → 관리 → API 키 → <strong>테스트 API 키 발급</strong>.
+              </p>
+            </div></li>
+
+            <li><span class="sn">6</span><div>
+              <h4>테스트</h4>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> python3 -m pytest        <span class="c"># 130 passed</span></pre>
+              </div>
+              <p>
+                구성은 파서 회귀 · 단위 정규화 · 별칭 · 도구 계약 · <strong>검증기</strong> ·
+                기권 · PII · FTS5 · LLM 프로바이더 · API 계약 · E2E 정확성이다.
+              </p>
+              <p>
+                특히 <code>test_verifier.py</code>가 <strong>환각 차단의 회귀 가드</strong>다.
+                여기가 깨지면 근거 없는 수치가 통과한다. 배포 전 반드시 전량 통과시킨다.
+              </p>
+            </div></li>
+          </ol>
+
+          <h3>키가 없을 때 무엇이 죽는가</h3>
+          <div class="tablewrap wide">
+            <table>
+              <caption>강등 범위 — /ready의 notes에 현재 상태가 표시된다</caption>
+              <thead><tr><th>계층</th><th>키 필요</th><th>키 없을 때</th></tr></thead>
+              <tbody>
+                <tr><td>파서 · Fact Store · 정정 체인 · 별칭</td><td>아니오</td><td>정상</td></tr>
+                <tr><td>FTS5 검색 · 섹션 주소 조회</td><td>아니오</td><td>정상</td></tr>
+                <tr><td>도구 6종 · 검증기 V1–V5 · 기권 판정</td><td>아니오</td><td>정상</td></tr>
+                <tr><td>벡터 검색 · 리랭킹</td><td><strong>예</strong></td><td>비활성 — BM25 단독</td></tr>
+                <tr><td>LLM 서술 생성</td><td><strong>예</strong></td><td>템플릿 조립으로 대체</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>자주 걸리는 문제</h3>
+          <div class="tablewrap wide">
+            <table>
+              <thead><tr><th>증상</th><th>원인 / 조치</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><code>ModuleNotFoundError: dart_agent</code></td>
+                  <td><code>uvicorn</code>을 직접 부르면 PYTHONPATH가 안 잡힌다. <code>run_server.py</code>를 쓸 것</td>
+                </tr>
+                <tr>
+                  <td>기동이 수십 분 걸림</td>
+                  <td>FTS5 색인이 없어서 기동 중에 만들고 있다. <code>build_index.py</code>를 먼저 돌릴 것</td>
+                </tr>
+                <tr>
+                  <td>전부 <code>abstained: true</code></td>
+                  <td>부분 색인(<code>--limit</code>)이라 해당 기업 섹션이 없을 수 있다. <code>/meta</code>로 건수 확인</td>
+                </tr>
+                <tr>
+                  <td>한글이 <code>?????</code>로 나옴</td>
+                  <td>함정 1. 파서가 euc-kr 선언을 따랐는지 확인</td>
+                </tr>
+                <tr>
+                  <td>첫 질의만 1.5초</td>
+                  <td>콜드 캐시. 정상이며 3회차엔 26ms. 평가 전 워밍업 권장</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ══ 08 ═══════════════════════════════════════════ -->
+      <section id="s8">
+        <div class="sec-head">
+          <span class="num">08</span>
+          <h2>CLOVA 실측</h2>
+          <p>문서가 아니라 실제 호출로 확인한 것들. 세 가지가 문서와 달랐다.</p>
+        </div>
+        <div class="body">
+
+          <div class="tablewrap wide">
+            <table>
+              <caption>실호출 결과 · 2026-08-11</caption>
+              <thead><tr><th>기능</th><th>결과</th><th>비고</th></tr></thead>
+              <tbody>
+                <tr><td>채팅 HCX-007</td><td><span class="chip v">검증됨</span></td><td>단, 토큰 한도 주의 — 함정 A</td></tr>
+                <tr><td>structured output</td><td><span class="chip v">검증됨</span></td><td>JSON Schema <code>strict</code> 동작</td></tr>
+                <tr><td>function calling</td><td><span class="chip v">검증됨</span></td><td><code>tool_calls</code> 정상 반환</td></tr>
+                <tr><td>Embedding bge-m3</td><td><span class="chip v">검증됨</span></td><td><strong>1,024차원</strong></td></tr>
+                <tr><td>“Reranker”</td><td><span class="chip t">주의</span></td><td>리랭커가 아니다 — 함정 C</td></tr>
+                <tr><td>토큰 단가</td><td><span class="chip u">미확인</span></td><td>공개 페이지 추출 실패. 요금 계산기로 확인 필요</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>함정 A — 빈 응답</h3>
+
+          <div class="note trap">
+            <span class="note-t">가장 위험한 발견</span>
+            <p>
+              HCX-007은 <strong>답변 전에 추론 토큰을 쓴다.</strong>
+              그 추론이 <code>max_completion_tokens</code>에 잘리면
+              <strong>HTTP 200 + <code>content</code> 빈 문자열</strong>이 돌아온다.
+              예외도 아니고 에러 코드도 아니라서, 그대로 답변에 실린다.
+            </p>
+          </div>
+
+          <div class="tablewrap wide">
+            <table>
+              <caption>동일 요청 반복 — 한도별 실측</caption>
+              <thead><tr><th class="n">한도</th><th>결과</th><th class="n">추론 토큰</th></tr></thead>
+              <tbody>
+                <tr><td class="n">100 / 300</td><td><span class="chip t">빈 응답</span></td><td class="n">전량 소진</td></tr>
+                <tr><td class="n">600</td><td>정상</td><td class="n">467</td></tr>
+                <tr><td class="n">1,200</td><td><span class="chip t">빈 응답</span></td><td class="n">1,200 (한도 절단)</td></tr>
+                <tr><td class="n">2,048</td><td><span class="chip t">5회 중 3회 빈 응답</span></td><td class="n">2,047 – 2,048</td></tr>
+                <tr><td class="n">8,192</td><td><strong>5회 중 5회 정상</strong></td><td class="n">284 – 1,010 (자연 종료)</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            <strong>임계값이 아니라 비결정적</strong>이다 — 600은 되는데 1,200은 안 됐다.
+            판별 표식은 <code>reasoning_tokens</code>가 한도와 <em>정확히 같은</em> 값이 되는 것이다
+            (2047/2048처럼). 자연 종료가 아니라 절단이라는 뜻이다.
+          </p>
+          <p>
+            <code>thinking.effort</code> / <code>reasoning_effort</code> 파라미터는 HTTP 200을 반환하지만
+            <strong>추론량을 실제로 줄이지 못했다.</strong> 파라미터가 수용되는 것과 동작하는 것은 다르다.
+          </p>
+
+          <div class="note ok">
+            <span class="note-t">조치</span>
+            <p>
+              기본값을 <strong>8,192</strong>로 올리고 간결 지시 시스템 프롬프트를 함께 준다.
+              그럼에도 빈 응답이 오면 <code>LLMResponse.truncated</code>가 서고,
+              호출자는 <code>usable</code> 속성으로 판별해 <strong>결정론 템플릿으로 강등</strong>해야 한다.
+            </p>
+            <p>
+              회귀 테스트가 기본값 하한(8,192)과 계약·구현·Stub 간 일치를 고정한다 —
+              누군가 2,048로 되돌리면 테스트가 실패한다.
+            </p>
+          </div>
+
+          <h3>함정 B — 오케스트레이터가 LLM을 호출하지 않는다</h3>
+          <p>
+            <code>self.llm</code>을 저장만 하고 어디서도 쓰지 않는다.
+            프로젝트 전체에 <code>.chat()</code> 호출이 <strong>0건</strong>이다.
+          </p>
+          <p>
+            나쁜 소식이 아니다. 지금 답이 정확한 건 전부 결정론 경로 덕분이고,
+            <strong>함정 A가 아직 터지지 않은 이유</strong>이기도 하다.
+            다만 <strong>HyperCLOVA X를 실제로는 쓰지 않고 있다</strong>는 사실은 분명히 인지해야 한다.
+          </p>
+          <p>
+            서술 계층을 붙일지는 §11의 채점 판단에 달려 있다.
+            붙인다면 반드시 <code>usable</code> 체크 + 템플릿 폴백을 함께 넣어야 한다.
+          </p>
+
+          <h3>함정 C — “Reranker”는 리랭커가 아니다</h3>
+          <p>
+            <code>/v1/api-tools/reranker</code>는 문서별 점수 배열을 주는 리랭커가 아니라
+            <strong>RAG 답변 생성 + 인용 API</strong>다.
+          </p>
+          <div class="cmd">
+            <div class="cmd-label">실제 응답</div>
+<pre>{"result": {
+   "result": "답변: 삼성전자는 &lt;doc2&gt;1969년 1월 13일에 …&lt;/doc2&gt;",
+   "citedDocuments": [{"id": "14002534#I-1"}],
+   "suggestedQueries": ["삼성전자 연간 실적 보고서 2024", ...],
+   "usage": {"promptTokens":727, "completionTokens":335, "totalTokens":1062} }}</pre>
+          </div>
+          <ul>
+            <li>생성된 답변은 <strong>버린다</strong>. <code>citedDocuments</code>만 관련성 신호로 쓴다 — 수치는 Fact Store가 낸다(D1).</li>
+            <li>
+              <strong>문서가 짧으면 관련 문서도 인용하지 않는다.</strong>
+              한 줄짜리 4건을 넣었더니 매출액이 명시된 문서를 두고 “정보가 제공되지 않습니다”로 거부했다.
+              실제 섹션 본문(수백 자)에서는 정상 인용했다 → <strong>본문을 충분히 실어 보낼 것</strong>.
+            </li>
+            <li>
+              인용이 보수적이다(4건 중 1건). 재현율보다 정밀도가 높은 필터로 취급하고,
+              <strong>BM25 상위 결과를 이것으로 제거해서는 안 된다</strong> — 가산점 용도로만.
+            </li>
+            <li>호출당 약 1,000토큰. 문항 수가 많으면 무시할 수 없는 비용이다.</li>
+          </ul>
+
+          <h3>토큰 사용량 실측 (예산 계산용)</h3>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>용도</th><th class="n">호출당 토큰</th></tr></thead>
+              <tbody>
+                <tr><td>채팅 (짧은 서술 1문장)</td><td class="n">300 – 1,000</td></tr>
+                <tr><td>RAG Reasoning (섹션 4건)</td><td class="n">약 1,060</td></tr>
+                <tr><td>임베딩 (질의 1건)</td><td class="n">수십</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            단가만 확인되면 <strong>₩200,000으로 평가기간을 버틸 수 있는지 계산이 끝난다.</strong>
+            그때까지 예산 계획은 확정할 수 없다 <span class="chip u">미확인</span>.
+          </p>
+
+        </div>
+      </section>
+
+      <!-- ══ 09 ═══════════════════════════════════════════ -->
+      <section id="s9">
+        <div class="sec-head">
+          <span class="num">09</span>
+          <h2>NCP 배포</h2>
+          <p>평가기간 09.07–09.20 내내 떠 있어야 한다. 메모리가 하드 제약이다.</p>
+        </div>
+        <div class="body">
+
+          <div class="note ok">
+            <span class="note-t">전량 실측 — 외삽 아님</span>
+            <p>
+              FTS5 전환 후 112,797섹션 기준: 기동 <strong>0.7–2.4초</strong>,
+              서버 상주 <strong>44–396 MB = 4GB의 1–10%</strong>,
+              질의 워밍 후 1–26 ms, DB <strong>3,871 MB</strong>.
+            </p>
+            <p>
+              상주 메모리의 대부분은 Kiwi 형태소 모델이며, <strong>코퍼스가 커져도 늘지 않는다</strong>.
+              색인이 디스크에 있고 조회 시점에만 페이지를 읽기 때문이다.
+            </p>
+          </div>
+
+          <ol class="steps">
+            <li><span class="sn">1</span><div>
+              <h4>크레딧 상태 확인</h4>
+              <div class="note ok">
+                <span class="note-t">공지로 확정 (08-11)</span>
+                <p>
+                  <strong>크레딧은 네이버클라우드 자원 사용 전반에 적용된다 (부가세 포함).</strong>
+                  CLOVA Studio만이 아니라 <strong>서버·네트워크까지 하나의 크레딧에서 차감</strong>된다.
+                  “적용 서비스 목록에 있는지”를 따로 걱정할 필요가 없어졌다.
+                </p>
+                <p>
+                  대신 <strong>서버 비용과 모델 호출 비용이 같은 지갑을 쓴다</strong>는 뜻이므로,
+                  서버를 오래 켜두면 그만큼 추론에 쓸 몫이 줄어든다.
+                </p>
+              </div>
+              <ul>
+                <li><strong>쿠폰 등록까지</strong> 끝났는지 확인한다 — 신청만으로는 할인이 적용되지 않는다.</li>
+                <li>유효기간 08.05 – 09.30. 평가기간을 덮는다.</li>
+              </ul>
+              <p>
+                크레딧은 <strong>소멸성</strong>이다. 아껴서 남기면 그냥 사라진다.
+                목표는 절약이 아니라 <em>소비 시점을 평가기간에 맞추는 것</em>이다.
+              </p>
+
+              <h4>서버 비용 시나리오</h4>
+              <p>사용자 확인 기준 <strong>시간당 237원</strong>일 때:</p>
+              <div class="tablewrap">
+                <table>
+                  <thead><tr><th>가동 방식</th><th class="n">시간</th><th class="n">비용</th><th class="n">크레딧 대비</th></tr></thead>
+                  <tbody>
+                    <tr><td>09.07–09.20 전체 상시</td><td class="n">336 h</td><td class="n">79,632원</td><td class="n">40%</td></tr>
+                    <tr><td>1주 상시</td><td class="n">168 h</td><td class="n">39,816원</td><td class="n">20%</td></tr>
+                    <tr><td>1주 × 09:00–16:00</td><td class="n">49 h</td><td class="n"><strong>11,613원</strong></td><td class="n"><strong>6%</strong></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="note ok">
+                <span class="note-t">좋은 소식</span>
+                <p>
+                  공지에 따르면 서버 운영 기간은 09.07–20 <strong>전체가 아니라 그 중 별도 공지되는 구간</strong>이며,
+                  <strong>주제별 최대 1주를 넘기지 않는다.</strong> 시간대까지 지정될 수 있다
+                  (공지 예시: <code>00.00일 ~ 00.00일 중 09:00–16:00</code>).
+                </p>
+                <p>
+                  즉 최악이 20%, 시간대 지정 시 <strong>6%</strong>다.
+                  <strong>서버 사양을 낮출 이유가 없어졌다</strong> — 오히려 메모리 여유를 두는 편이 안전하다.
+                </p>
+              </div>
+            </div></li>
+
+            <li><span class="sn">2</span><div>
+              <h4>VPC · Subnet · Server</h4>
+              <p>권장 사양 High-CPU <strong>2vCPU / 4GB / 20GB</strong>.</p>
+              <p>
+                스토리지는 DB 3.9GB + Docker 이미지 + 여유로 20GB면 충분하다.
+                <strong>코퍼스 원본 5.3GB는 서버에 올릴 필요가 없다</strong> —
+                인덱싱은 로컬에서 끝내고 결과물만 보낸다.
+              </p>
+            </div></li>
+
+            <li><span class="sn">3</span><div>
+              <h4>ACG (방화벽)</h4>
+              <div class="tablewrap">
+                <table>
+                  <thead><tr><th>방향</th><th class="n">포트</th><th>용도</th></tr></thead>
+                  <tbody>
+                    <tr><td>인바운드</td><td class="n">22</td><td>SSH (Linux)</td></tr>
+                    <tr><td>인바운드</td><td class="n">3389</td><td>RDP (Windows 사용 시)</td></tr>
+                    <tr><td>인바운드</td><td class="n">80 · 443</td><td>HTTP / HTTPS</td></tr>
+                    <tr><td>아웃바운드</td><td class="n">1–65535</td><td>CLOVA API 호출 등</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div></li>
+
+            <li><span class="sn">4</span><div>
+              <h4>인덱스는 로컬에서 만들어 올린다</h4>
+              <p>
+                2vCPU 서버에서 색인을 만들면 그 32분 내내 서버 요금이 나가고,
+                실제로는 로컬보다 훨씬 오래 걸린다 <span class="chip e">추정</span>.
+                로컬에서 만든 결과물만 전송하면 서버는 서빙만 하면 된다.
+              </p>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> ssh root@&lt;서버IP&gt; "mkdir -p /data/index"
+<span class="p">$</span> scp index/dart.sqlite root@&lt;서버IP&gt;:/data/index/
+<span class="c"># 3.9GB — 회선에 따라 수 분~수십 분</span></pre>
+              </div>
+            </div></li>
+
+            <li><span class="sn">5</span><div>
+              <h4>Docker 실행</h4>
+              <p>
+                인덱스는 이미지에 굽지 않고 <strong>볼륨으로 주입</strong>한다.
+                구우면 이미지가 4GB 넘게 비대해지고, 색인을 교체할 때마다 재빌드해야 한다.
+              </p>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> docker build -t dart-agent .
+<span class="p">$</span> docker run -d --name dart-agent --restart always \
+    <span class="s">-p 80:8000</span> \                <span class="c"># 🔴 외부는 표준 포트 80 (아래 6번)</span>
+    -v /data:/data \
+    -e CLOVA_API_KEY=nv-... \
+    dart-agent</pre>
+              </div>
+              <p>
+                <code>--restart always</code>와 이미지의 <code>HEALTHCHECK</code>
+                (30초 간격 · 시작 유예 120초)가 평가기간 상시 가용을 받친다.
+                프로세스가 죽어도 자동 복귀한다.
+              </p>
+            </div></li>
+
+            <li><span class="sn">6</span><div>
+              <h4>포트 — 표준 포트를 쓴다</h4>
+              <div class="note ok">
+                <span class="note-t">공지로 확정 (08-11)</span>
+                <p>
+                  <strong>HTTP가 기본이고 도메인은 필요 없다.</strong> 공인 IP를 그대로 제출하면 된다.
+                  HTTPS는 선택이며 <strong>자체 서명 인증서도 무방</strong>하다.
+                  Global DNS·Certificate Manager는 <strong>불필요</strong>하다.
+                </p>
+                <p>
+                  단 <strong>포트는 표준</strong>이어야 한다 — HTTP는 <strong>80</strong>, HTTPS는 <strong>443</strong>.
+                </p>
+              </div>
+              <p>
+                앱은 컨테이너 안에서 8000을 듣고 <strong>매핑으로 80을 연다</strong>.
+                컨테이너 내부에서 80을 직접 바인딩하면 root 권한이 필요해지므로 이 방식이 맞다.
+              </p>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> docker run -d --name dart-agent --restart always \
+    <span class="s">-p 80:8000</span> -v /data:/data -e CLOVA_API_KEY=nv-... dart-agent</pre>
+              </div>
+            </div></li>
+
+            <li><span class="sn">6b</span><div>
+              <h4>접근 제어 (선택)</h4>
+              <p>
+                주최측은 <strong>인증 헤더 없이</strong> 호출한다. 접근 제어가 필요하면
+                <strong>주최측 발신 IP 대역만 ACG에서 허용</strong>하는 방식을 쓴다.
+                해당 IP 대역은 추후 공지 예정이므로, 공지 전까지는 전체 개방으로 두고
+                공지 후 좁히면 된다.
+              </p>
+            </div></li>
+
+            <li><span class="sn">7</span><div>
+              <h4>계약 검증</h4>
+              <div class="cmd">
+                <div class="cmd-label">shell</div>
+<pre><span class="p">$</span> curl -G https://&lt;도메인&gt;/answer \
+    --data-urlencode "question_id=Q-001" \
+    --data-urlencode "question=삼성전자의 2024년 연결기준 매출액은?"
+
+<span class="c"># 확인 항목</span>
+<span class="c">#   · 계약 4필드 존재</span>
+<span class="c">#   · 어떤 입력에도 500 미발생 (빈 질의 · 특수문자 · 프롬프트 인젝션)</span>
+<span class="c">#   · 기권 문항이 사유 코드와 함께 200으로 반환</span></pre>
+              </div>
+            </div></li>
+
+            <li><span class="sn">8</span><div>
+              <h4>평가 직전 워밍업</h4>
+              <div class="note trap">
+                <span class="note-t">콜드 캐시</span>
+                <p>
+                  첫 접근이 최대 <strong>1.5초</strong>다(3회차엔 26 ms).
+                  평가 시작 전에 대표 질의 몇 개를 던져 페이지 캐시를 데워둘 것.
+                  현재 워밍업은 <strong>구현돼 있지 않다</strong> — 수동으로 하거나 기동 훅을 추가해야 한다.
+                </p>
+              </div>
+            </div></li>
+          </ol>
+
+          <div class="note ok">
+            <span class="note-t">재기동은 실격이 아니다 — 공지로 확정</span>
+            <p>
+              <strong>“제출 결과물 변경이 아닌, 단순 장애 등의 이유로 서버를 다시 띄우는 것은
+              실격 사유에 해당하지 않는다.”</strong>
+            </p>
+            <p>
+              평가 중 프로세스가 죽어도 재시작할 수 있다는 뜻이다.
+              <code>--restart always</code>가 자동 복구하고, 수동 개입도 허용된다.
+              다만 <strong>산출물을 바꾸는 재배포</strong>는 별개이므로 코드는 마감 시점에 동결한다.
+            </p>
+          </div>
+
+          <div class="note">
+            <span class="note-t">아직 미확인</span>
+            <p>
+              NCP 서버를 <strong>정지하면 과금이 멈추는지</strong>(스토리지만 과금되는지)는
+              여전히 콘솔에서 확인해야 한다 <span class="chip u">미확인</span>.
+              멈춘다면 8월에 리허설하고 껐다가 운영 구간 직전에 켜는 것이 최적이다.
+            </p>
+            <p>
+              <strong>정확한 운영 일자·시간대도 아직 공지 전</strong>이다. 공지가 나오면
+              그 구간에만 켜도록 일정을 맞춘다.
+            </p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ══ 10 ═══════════════════════════════════════════ -->
+      <section id="s10">
+        <div class="sec-head">
+          <span class="num">10</span>
+          <h2>터진 버그들</h2>
+          <p>실제로 발견해서 고친 것들. 대부분 “정상 동작처럼 보이는 실패”였다.</p>
+        </div>
+        <div class="body">
+
+          <p>
+            여기 적는 이유는 자랑이 아니라 <strong>이런 종류의 실패는 테스트가 없으면 안 잡힌다</strong>는
+            것을 보여주기 위해서다. 전부 HTTP 200을 반환하거나 예외 없이 통과하던 것들이다.
+          </p>
+
+          <h3>캐시 키가 문항 id뿐이었다</h3>
+          <div class="note trap">
+            <span class="note-t">평가 전체를 망칠 수 있었던 것</span>
+            <p>
+              답변 캐시가 <code>question_id</code> <strong>단독</strong>으로 키를 잡고 있었다.
+              평가측이 같은 id로 다른 문항을 보내면 <strong>이전 답변이 그대로 나가고,
+              한 번 어긋나면 그 뒤 전 문항이 오답</strong>이 된다.
+            </p>
+            <p>
+              발견 경위가 우연이었다. 테스트 스크립트에서 <code>$RANDOM</code>이 재확장되지 않아
+              같은 id로 4번 호출했고, 4개 다른 질문에 전부 같은 답이 나왔다.
+              서버는 정상이었지만 그 사고가 진짜 취약점을 드러냈다.
+            </p>
+            <p>
+              수정: 키를 <code>(question_id, question)</code> 쌍으로. 회귀 테스트
+              <code>test_same_id_different_question_is_not_cache_hit</code> 추가.
+            </p>
+          </div>
+
+          <h3>ACONTEXT 정규식이 FY만 알았다</h3>
+          <p>
+            반기·분기 컨텍스트(<code>dHYA</code>·<code>dHYQ</code>·<code>FQ</code>·<code>TQ</code>)를
+            인식하지 못해 문서당 3,000~4,000건씩 파싱 실패가 나고 있었다.
+            로그를 보지 않으면 모른다 — 나머지는 정상 적재되니까.
+            고친 뒤 적재 사실이 <strong>14,466 → 34,956</strong>건이 됐다.
+          </p>
+
+          <h3>검증기가 자기 계산 결과를 환각으로 판정</h3>
+          <p>
+            §5에 적은 V1 오탐. 파생 표기(<code>300.9조원</code>)가 근거 집합에 없어
+            <strong>문장이 삭제되고 답변이 비었다.</strong> 그러자 V3(요구사항 충족)까지 연쇄 실패했다.
+            가장 오래 붙잡은 버그였다.
+          </p>
+
+          <h3>이벤트 조회가 종류를 구분하지 않았다</h3>
+          <p>
+            “자기주식 취득 내역”을 물었더니 <strong>해외증권시장 상장 공시</strong>가 나왔다.
+            이벤트 테이블에서 종류 필터 없이 조회하고 있었던 것. 종류별 패턴 매칭을 추가했다.
+          </p>
+
+          <h3>인용 연도가 어긋났다</h3>
+          <p>
+            FY2024 매출을 물었는데 2025년 사업보고서의 <em>전년 비교 열</em>을 인용했다.
+            값은 맞지만 근거 문서의 연도가 질의 연도와 달라 보인다.
+            “자기 연도 우선” 정렬 규칙을 추가해 해결했다 (§5).
+          </p>
+
+          <h3>테스트가 조용히 못 쓰게 될 뻔했다</h3>
+          <p>
+            FTS5로 전환한 뒤에도 <code>conftest.py</code>가 여전히 인메모리
+            <code>load_index()</code>를 부르고 있었다. 부분 색인에서는 빨랐지만
+            전체 색인에서는 <strong>테스트가 8분간 멈췄다</strong> — 29분·수 GB짜리 작업이었기 때문이다.
+            운영 경로(FTS5)로 통일했다.
+          </p>
+
+          <h3>서버 폴백이 OOM 경로였다</h3>
+          <p>
+            색인 없이 배포하면 기동 시 인메모리 BM25를 112K 섹션에 대해 만들려다
+            4GB 서버에서 죽는 구조였다. 같은 비용이면 <strong>올바른 산출물(FTS5)</strong>을 만들도록
+            폴백 자체를 바꿨다. 메모리가 일정하게 유지된다.
+          </p>
+
+          <h3>PII 마스킹이 명세에만 있고 구현이 없었다</h3>
+          <p>
+            기술명세서 §4-4에 마스킹이 요구사항으로 적혀 있었는데 코드가 없었다.
+            “임원 생년월일 알려줘”가 섹션을 그대로 반환하고 있었다.
+            <code>agent/pii.py</code>를 만들어 게이트 + 마스킹을 붙이고,
+            회사 단위 질의는 계속 답하는지 양방향 테스트로 고정했다.
+          </p>
+
+          <h3>한국어 조사</h3>
+          <p>
+            “삼성전자<strong>이</strong> 더 큽니다”처럼 조사가 틀렸다. 받침 판정을 넣었더니
+            이번엔 “NAVER<strong>이</strong>”가 됐다 — 영문은 읽는 법이 불확정이라
+            (NAVER는 “네이버”라 받침이 없다) 비한글은 무받침으로 기본 처리하게 했다.
+            사소해 보이지만 답변 품질의 인상을 좌우한다.
+          </p>
+
+        </div>
+      </section>
+
+      <!-- ══ 11 ═══════════════════════════════════════════ -->
+      <section id="s11">
+        <div class="sec-head">
+          <span class="num">11</span>
+          <h2>1등 전략</h2>
+          <p>채점 항목을 뒤집어 보면, 이기는 지점은 “잘 답하기”가 아니라 “틀리지 않기”다.</p>
+        </div>
+        <div class="body">
+
+          <h3>채점표 역설계</h3>
+          <div class="tablewrap wide">
+            <table>
+              <thead><tr><th>채점 항목</th><th>겨냥하는 설계</th><th>근거</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><strong>정확성</strong></td>
+                  <td>D1 — 수치는 조회한다</td>
+                  <td>LLM이 숫자를 만들 <em>경로가 없다</em>. 확률을 낮춘 게 아니라 없앴다</td>
+                </tr>
+                <tr>
+                  <td><strong>근거 완전성</strong></td>
+                  <td>D4 — 인용에 접수번호·섹션주소·단위·출처</td>
+                  <td>도구가 값과 출처를 <em>함께</em> 반환하는 계약</td>
+                </tr>
+                <tr>
+                  <td><strong>추론 과정</strong></td>
+                  <td>D4 — <code>think_trace</code>가 5단계 구조</td>
+                  <td>산문이 아니라 파싱 가능한 형태</td>
+                </tr>
+                <tr>
+                  <td><strong>개인정보</strong></td>
+                  <td>PII 게이트 2겹 + 과잉차단 방지</td>
+                  <td>공시에 있어도 답하지 않되, 회사 단위는 답한다</td>
+                </tr>
+                <tr>
+                  <td><strong>거부 능력</strong></td>
+                  <td>D5 — 기권 8종 + 사실·역질문 동봉</td>
+                  <td>거부만 하지 않고 다음 행동을 준다</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>경쟁작이 놓칠 지점</h3>
+          <p>
+            일반적인 RAG 파이프라인(청킹 → 임베딩 → top-k → LLM 생성)으로는
+            §3의 함정 대부분을 <strong>통과하지 못한다.</strong> 더 정확히는,
+            함정의 존재 자체를 알 수 없다 — 전부 조용히 틀리기 때문이다.
+          </p>
+          <div class="tablewrap wide">
+            <table>
+              <thead><tr><th>함정</th><th>일반 RAG의 증상</th><th>영향받는 문항</th></tr></thead>
+              <tbody>
+                <tr><td>정정 43%</td><td>같은 계약 중복 계상</td><td>집계·이벤트 문항</td></tr>
+                <tr><td>단위 27% 미표기</td><td>1,000배 오차</td><td>비교·순위 문항 전멸</td></tr>
+                <tr><td>누적 vs 당기</td><td>두 배 차이 값이 무작위로</td><td>반기·분기 문항 절반</td></tr>
+                <tr><td>euc-kr 선언</td><td>거래소공시 1,469건 깨짐</td><td>계약·실적 문항</td></tr>
+                <tr><td>통용명 ↔ 법인명</td><td>조인 실패 → 무응답</td><td>“현대차”·“하이닉스” 류 전부</td></tr>
+                <tr><td>지표명 변형</td><td>“영업수익”을 못 찾음</td><td>셀트리온 등 일부 기업</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>핵심 판단 — 어디에 시간을 쓸 것인가</h3>
+          <div class="note ok">
+            <span class="note-t">08-11 공지가 이 판단을 뒷받침한다</span>
+            <p>
+              “코퍼스만으로 답할 수 없는 질의”를 물었더니 주최측이
+              <strong>‘정보한계대응’ 항목을 설명회·과제소개자료에서 안내한 바 있다</strong>고 답했다.
+            </p>
+            <p>
+              즉 <strong>답할 수 없는 질의가 평가에 포함되고, 그 대응이 별도 채점 항목으로 존재한다.</strong>
+              추측이 아니라 확인된 사실이 됐다 — 기권 설계(D5·기권 9종)가 <em>보험</em>이 아니라
+              <strong>직접 득점 수단</strong>이다.
+            </p>
+          </div>
+
+          <div class="note">
+            <span class="note-t">전략</span>
+            <p>
+              <strong>기권해야 할 때 정확히 기권하는 것</strong>이 점수 기대값이 높다.
+              채점 항목 중 <strong>둘(개인정보·정보한계대응)이 “답하지 않는 능력”</strong>이고,
+              정확성은 틀린 답에 감점이 있다. <em>모르는 것을 안다고 하지 않는 것</em>이
+              세 항목에 동시에 기여한다.
+            </p>
+            <p>
+              🔴 <strong>다만 “서술을 포기한다”는 뜻은 아니다.</strong>
+              300초 타임아웃(§6)이 확인되면서 <em>둘 중 하나</em>를 고를 이유가 사라졌다 —
+              시간 예산이 1만 배 남으므로 기권 정확도를 지키면서 서술 계층도 붙일 수 있다.
+              우선순위는 여전히 기권이지만, 그 다음이 서술이다.
+            </p>
+          </div>
+
+          <h3>데모·제안서에서 보여줄 것</h3>
+          <ol>
+            <li>
+              <strong>같은 질문의 두 얼굴</strong> — 삼성전자 2025 반기 매출을
+              누적/당기로 나눠 보여준다. 이걸 구분한다는 사실 자체가 깊이의 증거다.
+            </li>
+            <li>
+              <strong>기권 시나리오</strong> — “주가 오를까요?”에 거부만 하지 않고
+              확인 가능한 사실 + 역질문을 주는 응답.
+            </li>
+            <li>
+              <strong>근거의 구체성</strong> — 접수번호와 섹션 주소까지 찍힌 <code>retrieved_context</code>.
+              “어느 문서 어느 위치”까지 말할 수 있는 시스템은 흔치 않다.
+            </li>
+            <li>
+              <strong>정정 체인</strong> — 원본과 정정본이 함께 있는 계약을 추적해
+              유효본만 집계하는 과정.
+            </li>
+          </ol>
+
+        </div>
+      </section>
+
+      <!-- ══ 12 ═══════════════════════════════════════════ -->
+      <section id="s12">
+        <div class="sec-head">
+          <span class="num">12</span>
+          <h2>평가셋과 일정</h2>
+          <p>D-26. 가장 먼저 만들어야 할 것은 기능이 아니라 측정 수단이다.</p>
+        </div>
+        <div class="body">
+
+          <h3>왜 평가셋이 최우선인가</h3>
+          <p>
+            지금은 <strong>정확도를 측정할 수단이 없다.</strong>
+            무엇을 고쳐도 나아졌는지 알 수 없고, 남은 26일을 감으로 쓰게 된다.
+            개선을 시작하기 전에 자를 먼저 만들어야 한다.
+          </p>
+          <p>
+            AI-research-SKILLs의 <code>11-evaluation</code>이 강조하는 순서도 같다 —
+            <strong>오류 분석 우선</strong>, 골든셋 설계, 판정자 보정.
+            벤치마크 점수를 올리는 게 아니라 <em>어디서 틀리는지</em>를 먼저 알아야 한다.
+          </p>
+
+          <h3>180문항 구성안</h3>
+          <div class="tablewrap wide">
+            <table>
+              <caption>커버리지 설계</caption>
+              <thead><tr><th class="n">문항</th><th>유형</th><th>검증 대상</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="n">50</td>
+                  <td>단일 수치 조회</td>
+                  <td>연결/별도 · 연간/반기/분기 · <strong>누적/당기</strong> · 지표명 변형</td>
+                </tr>
+                <tr>
+                  <td class="n">35</td>
+                  <td>비교 · 증감률 · 순위</td>
+                  <td>단위 정규화 · <code>compute</code> 정확도 · 단위 불확정 거부</td>
+                </tr>
+                <tr>
+                  <td class="n">30</td>
+                  <td>이벤트 추적</td>
+                  <td>계약·자금조달·지분 · <strong>정정 체인 해소</strong> · 종류 구분</td>
+                </tr>
+                <tr>
+                  <td class="n">30</td>
+                  <td>섹션 서술형</td>
+                  <td>주소 매핑(D2) · 검색 폴백 · 인용 정확도</td>
+                </tr>
+                <tr>
+                  <td class="n">20</td>
+                  <td>다중 기업 · 다중 연도</td>
+                  <td>별칭 해소 · 복합 조회</td>
+                </tr>
+                <tr>
+                  <td class="n"><strong>15</strong></td>
+                  <td><strong>기권 트랩</strong></td>
+                  <td>미래예측 · 범위 밖 연도 · 미상장 기업 · <strong>개인정보</strong> · 외부 출처 · 프롬프트 인젝션</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="note">
+            <span class="note-t">기권 트랩이 핵심</span>
+            <p>
+              15문항은 <strong>답하면 감점</strong>인 문항이다.
+              정답은 “적절한 사유와 함께 기권”이고, 그럴듯한 답을 지어내면 실패다.
+              §11의 판단대로 채점 항목 셋에 동시에 걸리므로 비중 대비 가치가 높다.
+            </p>
+          </div>
+
+          <h3>정답 만들기</h3>
+          <p>
+            정답을 손으로 다 채우는 건 현실적이지 않다. 대신:
+          </p>
+          <ul>
+            <li><strong>수치 문항</strong> — Fact Store에서 SQL로 정답을 뽑아 고정한다. 시스템이 스스로 채점 가능</li>
+            <li><strong>기권 문항</strong> — 기대 <code>abstain_reason</code> 코드를 정답으로 둔다. 완전 자동 채점</li>
+            <li><strong>서술 문항</strong> — 정답 문자열 대신 <strong>필수 포함 근거</strong>(섹션 주소)를 정답으로 둔다</li>
+          </ul>
+          <p>
+            이렇게 하면 180문항 중 <strong>150문항 이상이 자동 채점</strong>된다 <span class="chip e">추정</span>.
+            반복 측정이 가능해야 개선 사이클이 돈다.
+          </p>
+
+          <h3>주차별 일정</h3>
+          <div class="tablewrap wide">
+            <table>
+              <thead><tr><th class="k">시기</th><th>할 일</th><th>비용</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="k">08.11 – 08.17</td>
+                  <td>
+                    <strong>평가셋 180문항 작성 + 자동 채점 스크립트</strong> · 콜드 캐시 워밍업 구현 ·
+                    <strong>LLM 서술 계층 구현</strong>(300초 여유 확인됨) ·
+                    🆕 <strong>전처리 산출물 3.9GB 업로드용 스토리지 확보</strong>
+                  </td>
+                  <td>0원</td>
+                </tr>
+                <tr>
+                  <td class="k">08.18 – 08.24</td>
+                  <td>1차 측정 → 약한 지표부터 개선 · CLOVA 단가 확인 후 예산 확정 · (필요 시) 벡터 색인 구축</td>
+                  <td>토큰만</td>
+                </tr>
+                <tr>
+                  <td class="k">08.25 – 08.31</td>
+                  <td>NCP 서버 개설 · 인덱스 전송 · Docker 배포 리허설 · HTTPS 확인 → <strong>확인 후 서버 정지</strong></td>
+                  <td>서버 며칠분</td>
+                </tr>
+                <tr>
+                  <td class="k">09.01 – 09.06</td>
+                  <td>2차 측정 · 기술제안서 마무리 · API 명세서 작성 · <strong>09.06 제출</strong></td>
+                  <td>낮음</td>
+                </tr>
+                <tr>
+                  <td class="k">09.07 – 09.20</td>
+                  <td><strong>평가기간 — 상시 가동</strong> · 일 1회 헬스체크 · 워밍업 유지</td>
+                  <td>본 소비</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="footnote">
+            <p>
+              <strong>검증 표기</strong> — 이 문서의 수치는
+              <span class="chip v">검증됨</span> 실제 실행·측정,
+              <span class="chip e">추정</span> 실측값 기반 외삽·판단,
+              <span class="chip u">미확인</span> 아직 확인하지 않음으로 구분했다.
+              표기가 없는 수치는 검증됨이다.
+            </p>
+            <p>
+              주요 <span class="chip e">추정</span> — 인메모리 전량 메모리(상주 3.4 GB / 피크 9.7 GB)는
+              6,504섹션 실측을 17.3배 외삽한 값이며 전량 인메모리 빌드는 실행하지 않았다.
+              자동 채점 가능 문항 150+도 설계상의 추정이다.
+              pageindex의 성능 수치는 영문 코퍼스·다른 모델 기준이라 본 과제로 전이되지 않는다.
+            </p>
+            <p>
+              주요 <span class="chip u">미확인</span> — CLOVA 토큰 단가,
+              NCP 서버 정지 시 과금 중단 여부, 4GB 실서버에서의 실제 동작(로컬 검증만 완료),
+              8,192 토큰이 <em>모든</em> 질의 길이에서 충분한지(5회 표본).
+            </p>
+            <p>작성 2026-08-11 · 실측 환경 Python 3.11 / macOS · CLOVA Studio 실호출 기준</p>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themebtn');
+    var root = document.documentElement;
+    btn.addEventListener('click', function () {
+      var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var cur = root.getAttribute('data-theme') || (dark ? 'dark' : 'light');
+      root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    });
+  })();
+</script>

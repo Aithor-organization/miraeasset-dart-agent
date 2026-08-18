@@ -1,0 +1,20 @@
+# 공시 Agent — 런타임 의존성 (버전 핀 고정, SPEC §7-2 재현성)
+# 실측 환경: Python 3.11.5 / macOS. 전 항목 본 프로젝트에서 실제 동작 확인.
+
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.12.5
+
+# HTTP 클라이언트 — CLOVA Studio 호출 전용 (llm/ 계층 밖에서 사용 금지, AC-L4)
+httpx==0.28.1
+
+# 파싱: DART XML(lxml) + 거래소공시 HTML(bs4)
+lxml==6.0.1
+beautifulsoup4==4.12.2
+
+# 🔴 한국어 형태소 BM25 — 미설치 시 문자 n-gram으로 자동 강등되나 검색 품질이 떨어진다.
+#    순수 Python 휠 배포라 MeCab 같은 시스템 의존이 없다 (Docker 빌드 단순).
+kiwipiepy==0.23.2
+
+# 테스트
+pytest==9.0.2

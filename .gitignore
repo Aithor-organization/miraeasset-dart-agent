@@ -1,0 +1,47 @@
+# ── 🔴 절대 커밋 금지 ────────────────────────────────────────────────────────
+
+# API 키 (CLOVA Studio 실키)
+.env
+*.pem
+*.key
+
+# 코퍼스 원본 5.2GB — 주최측이 제공한 것이라 재배포 대상이 아니다
+docs/3.공시/corpus/
+docs/**/corpus/
+
+# 인덱스 3.8GB — 전처리 산출물은 클라우드 스토리지 링크로 별도 제출한다 (공지 08-11)
+#
+# 🔴 `index/`(슬래시)는 **디렉터리만** 매칭한다. 로컬 테스트용으로 심볼릭 링크를
+#    걸면 `?? index`로 추적 대상에 잡힌다 — 실측으로 확인됨. 슬래시 없이 쓴다.
+index
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.pkl
+
+# Terraform — provider 바이너리 31MB + 상태 파일(민감값 평문) + 실키
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+infra/*.auto.tfvars
+infra/*.tfplan
+
+# ── 일반 ────────────────────────────────────────────────────────────────────
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+.DS_Store
+*.log
+*.tmp
+
+# 평가 실행 결과 (재생성 가능 — 골드셋 자체는 커밋한다)
+eval/baseline.json
+eval/after_scope_fix.json
+eval/final.json
+eval/last.json

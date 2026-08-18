@@ -1,0 +1,35 @@
+# 이 파일을 terraform.tfvars로 복사해서 채운다.
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# 🔴 terraform.tfvars는 .gitignore에 있다. 실키를 커밋하지 말 것.
+#    키를 파일에 두기 싫으면 환경변수를 쓴다:
+#      export NCLOUD_ACCESS_KEY="..."
+#      export NCLOUD_SECRET_KEY="..."
+#    (환경변수를 쓰면 access_key/secret_key 줄은 지워도 된다)
+
+access_key = "여기에_액세스키"
+secret_key = "여기에_시크릿키"
+
+# ── 서버 사양 — 🔴 콘솔에서 실제 값을 확인해 채울 것 ──────────────────────
+#
+# NCP 콘솔 → Server → 서버 생성 화면에서 확인한다.
+# 아래는 형식 예시이며 그대로 쓰면 안 된다 (리전·시점에 따라 다름).
+#
+#   server_image_number : Ubuntu 22.04 이미지의 숫자 ID
+#   server_spec_code    : High-CPU 2vCPU / 4GB 사양 코드
+
+server_image_number = ""   # 예: "25495367"
+server_spec_code    = ""   # 예: "s2-g3"
+
+# ── 접근 제어 ───────────────────────────────────────────────────────────────
+
+# 🔴 본인 공인 IP로 지정. 확인: curl -s ifconfig.me
+admin_cidr = "0.0.0.0/32"  # ← 반드시 교체할 것
+
+# 주최측 발신 IP 대역이 공지되면 여기를 좁힌다.
+# allowed_http_cidr = "0.0.0.0/0"
+
+# ── 선택 ────────────────────────────────────────────────────────────────────
+# region      = "KR"
+# zone        = "KR-2"
+# name_prefix = "dart-agent"
