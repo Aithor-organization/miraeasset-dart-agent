@@ -27,7 +27,9 @@ from __future__ import annotations
 import logging
 import re
 
+from ..llm.hard_deadline import HardTimeout, run_bounded
 from ..llm.provider import LLMProvider
+from ..llm.ratelimit import remaining
 
 log = logging.getLogger(__name__)
 
@@ -102,8 +104,11 @@ def route(llm: LLMProvider | None, question: str, *, max_tokens: int = 2048,
     """(섹션 주소들, 사유). 실패하면 빈 리스트 — 호출자는 기존 검색으로 간다."""
     if llm is None or getattr(llm, "name", "") == "stub":
         return [], "stub — 목차 라우팅 생략"
+    # 🔴 벽시계 상한 — httpx 타임아웃이 못 잡는 행(hang) 차단 (narrate와 동일 근거).
+    #    라우팅은 답변 품질에 덜 중요하므로 상한을 더 짧게 둔다.
     try:
-        resp = llm.chat(
+        resp = run_bounded(
+            llm.chat, min(remaining(deadline), 25.0),
             [{"role": "system", "content": SYSTEM},
              # 질문도 외부 입력이다 — 데이터 경계를 명시한다.
              # 여기는 출력이 CATALOG 화이트리스트로 갇히므로 피해 상한이 낮지만,
@@ -113,6 +118,9 @@ def route(llm: LLMProvider | None, question: str, *, max_tokens: int = 2048,
             temperature=0.0,
             deadline=deadline,
         )
+    except HardTimeout as exc:
+        log.warning("목차 라우팅 벽시계 초과(%s) — 검색으로 진행", exc)
+        return [], f"벽시계 상한 초과 — 검색 진행"
     except Exception as exc:
         log.warning("목차 라우팅 실패(%s) — 검색으로 진행", exc)
         return [], f"LLM 오류({type(exc).__name__}) — 검색 진행"

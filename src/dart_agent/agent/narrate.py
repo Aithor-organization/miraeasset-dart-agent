@@ -21,7 +21,9 @@ from __future__ import annotations
 import logging
 import re
 
+from ..llm.hard_deadline import HardTimeout, run_bounded
 from ..llm.provider import LLMProvider
+from ..llm.ratelimit import remaining
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +113,11 @@ _INJECTION: tuple[re.Pattern[str], ...] = (
     re.compile(r"you\s+are\s+now|new\s+instructions?\s*:", re.I),
     re.compile(r"(system|assistant|user)\s*[:：]\s*$", re.M),
 )
+
+# 🔴 벽시계 상한 — 데드라인이 없거나 넉넉해도 이 값을 넘기지 않는다.
+#    HCX-007 정상 응답은 5~15초다. 45초를 넘으면 이상 상태이고, 기다려서
+#    얻을 것보다 잃을 것(평가 타임아웃)이 크다.
+_WALL_CLOCK_CAP_S = 45.0
 
 SYSTEM = """너는 공시 데이터 분석 결과를 다듬는 편집자다.
 
@@ -300,8 +307,12 @@ def narrate(
         log.warning("입력에 지시문 패턴 — LLM 생략, 템플릿 사용 (%r)", inj)
         return body, f"입력 지시문 감지({inj}) — LLM 미호출"
 
+    # 🔴 벽시계 상한 — httpx 타임아웃이 못 막는 행(hang)을 스레드로 자른다.
+    #    실측: read=25s를 걸어두고도 579초를 매달린 요청이 있었다 (v11 SV-022).
+    budget = min(remaining(deadline), _WALL_CLOCK_CAP_S)
     try:
-        resp = llm.chat(
+        resp = run_bounded(
+            llm.chat, budget,
             [
                 {"role": "system", "content": SYSTEM},
                 # 🔴 신뢰구간 격리 — 질문과 초안은 **데이터**이지 지시가 아니다.
@@ -318,6 +329,8 @@ def narrate(
             temperature=0.1,
             deadline=deadline,
         )
+    except HardTimeout as exc:
+        return body, f"벽시계 상한 초과({exc}) — 템플릿 강등"
     except Exception as exc:                       # 네트워크·API 오류
         # 🔴 500을 내지 않는다. 결정론 답변이 이미 손에 있으므로 그것으로 답한다 —
         #    기권보다도 낫고, 재시도를 노리는 5xx보다도 낫다.

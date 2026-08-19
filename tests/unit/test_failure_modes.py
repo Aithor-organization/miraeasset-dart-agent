@@ -142,3 +142,72 @@ class TestCountersObserveDegradation:
         snap = counters.snapshot()
         counters.bump("x")
         assert snap["x"] == 1, "스냅샷이 살아있는 참조다"
+
+
+class TestHardWallClock:
+    """🔴 실측 사고 — httpx 타임아웃이 못 막는 행(hang) (2026-08-19, 골든셋 v11 SV-022).
+
+        11:52:42  요청 시작
+        12:02:21  clova transport error: Server disconnected without sending a response.
+        → 579초. `read=25s`를 걸어두고도 9분 39초를 매달렸다.
+
+    `httpx.Timeout(read=25)`는 **읽기 연산 하나**의 상한이지 요청 전체의 상한이 아니다.
+    연결이 열린 채 아무것도 오지 않다가 끊기는 패턴에서 발동하지 않는다.
+
+    평가 타임아웃 300초 기준 이 사건 하나가 그 문항을 0점으로 만든다 —
+    실제로 v11에서 정확도는 177/177인데 1건이 578초로 초과했다.
+    """
+
+    def test_hang_is_cut(self):
+        """멈춘 호출을 상한에서 끊는다."""
+        import time as _t
+
+        from dart_agent.llm.hard_deadline import HardTimeout, run_bounded
+
+        def hang():
+            _t.sleep(30)
+            return "너무 늦음"
+
+        t0 = _t.monotonic()
+        with pytest.raises(HardTimeout):
+            run_bounded(hang, 0.3)
+        assert _t.monotonic() - t0 < 2.0, "상한이 실제로 끊지 못했다"
+
+    def test_fast_call_passes_through(self):
+        from dart_agent.llm.hard_deadline import run_bounded
+        assert run_bounded(lambda x: x * 2, 5.0, 21) == 42
+
+    def test_zero_budget_refuses(self):
+        from dart_agent.llm.hard_deadline import HardTimeout, run_bounded
+        with pytest.raises(HardTimeout):
+            run_bounded(lambda: 1, 0)
+
+    def test_inner_exception_propagates(self):
+        """실제 오류는 그대로 올라와야 한다 — 상한이 오류를 삼키면 안 된다."""
+        from dart_agent.llm.hard_deadline import run_bounded
+        with pytest.raises(ValueError):
+            run_bounded(lambda: (_ for _ in ()).throw(ValueError("실제 오류")), 5.0)
+
+    def test_narrate_degrades_on_hang(self):
+        """행이 나도 **답변은 나간다** — 결정론 본문 그대로."""
+        import time as _t
+
+        from dart_agent.agent import narrate as N
+
+        class Hang:
+            name = "clova"
+            def chat(self, *a, **k):
+                _t.sleep(20)
+                return None
+
+        body = "삼성전자의 2024년 연결기준 매출액은 300,870,903백만원입니다. [C1]"
+        orig = N._WALL_CLOCK_CAP_S
+        N._WALL_CLOCK_CAP_S = 0.3
+        try:
+            t0 = _t.monotonic()
+            text, why = N.narrate(Hang(), body, question="q")
+            assert text == body, "행 발생 시 본문이 손상됐다"
+            assert "벽시계" in why, why
+            assert _t.monotonic() - t0 < 2.0, "호출자가 행에 붙잡혔다"
+        finally:
+            N._WALL_CLOCK_CAP_S = orig
