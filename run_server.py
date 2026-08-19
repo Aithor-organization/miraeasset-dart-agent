@@ -11,11 +11,20 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(_ROOT / "src"))
 
 
 def main() -> int:
     import uvicorn
+
+    from dart_agent.envfile import load_env
+
+    # 🔴 uvicorn 기동 **전에** 채운다 — 설정은 앱 임포트 시점에 읽힌다.
+    #    이게 없으면 `.env`에 키가 있어도 StubProvider로 뜬다 (2026-08-19 실측).
+    loaded = load_env(_ROOT / ".env")
+    if loaded:
+        print(f"[env] .env에서 {len(loaded)}개 로드: {', '.join(sorted(loaded))}")
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))

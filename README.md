@@ -51,16 +51,22 @@ python3 scripts/build_index.py --limit 60 --rebuild
 #    전체 4,204건
 python3 scripts/build_index.py --rebuild
 
-# 2) 서버 실행 (로컬 개발 — 8000)
+# 2) HyperCLOVA X 키 설정 — .env 한 줄이면 된다 (run_server가 직접 읽는다)
+echo 'CLOVA_API_KEY=<발급받은 키>' > .env
+#    키가 없어도 서버는 뜬다. 단 결정론 경로(수치·섹션·이벤트)만 동작하고
+#    LLM 서술은 비활성이다. 기동 로그 끝의 `llm=` 값으로 확인할 것:
+#      llm=clova → 정상   /   llm=stub → 키 미인식
+
+# 3) 서버 실행 (로컬 개발 — 8000)
 python3 run_server.py            # http://0.0.0.0:8000
 #    배포 시에는 외부를 표준 포트 80으로 노출한다 (docker -p 80:8000, §6 참조)
 
-# 3) 호출 (주최측 평가 계약)
+# 4) 호출 (주최측 평가 계약)
 curl -G localhost:8000/answer \
   --data-urlencode "question_id=Q-001" \
   --data-urlencode "question=삼성전자의 2024년 연결기준 매출액은 얼마인가?"
 
-# 4) 테스트
+# 5) 테스트
 python3 -m pytest
 ```
 
