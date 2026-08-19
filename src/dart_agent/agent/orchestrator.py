@@ -12,6 +12,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
+from .. import counters
 from ..config import Config
 from ..metrics import from_query
 from ..models import CONSOLIDATED
@@ -114,6 +115,11 @@ class Answer:
     abstain_reason: str | None = None
     latency_ms: int = 0
     verify_summary: str = ""
+    # 🔴 LLM 강등 여부를 **응답 필드로** 노출한다.
+    #    think_trace에만 있으면 조용한 저하다 — 사용자도 지표도 모른다
+    #    (AITHOR `lifecycle-operator`: "조용한 저하는 장애 은폐").
+    degraded: bool = False
+    degrade_reason: str = ""
 
     def to_payload(self) -> dict:
         """주최측 명시 4필드 + 부가 필드 (AC-API1)."""
@@ -129,6 +135,8 @@ class Answer:
             "abstain_reason": self.abstain_reason,
             "latency_ms": self.latency_ms,
             "verification": self.verify_summary,
+            "degraded": self.degraded,
+            "degrade_reason": self.degrade_reason,
         }
 
 
@@ -141,7 +149,7 @@ class Orchestrator:
         self._cache: dict[tuple[str, str], Answer] = {}
 
     # ── 질의 이해 ───────────────────────────────────────────────────────
-    def understand(self, question: str) -> QuerySpec:
+    def understand(self, question: str, deadline: float | None = None) -> QuerySpec:
         q = QuerySpec(question=question)
         q.corp_codes = alias.find_in_text(self.conn, question)
         if q.corp_codes:
@@ -185,7 +193,8 @@ class Orchestrator:
         #    반환 주소는 route_section.CATALOG 화이트리스트로 걸러진다.
         q.path_route_why = ""
         if not q.paths and q.mentions_company and not q.metric_key:
-            q.paths, q.path_route_why = route_section.route(self.llm, question)
+            q.paths, q.path_route_why = route_section.route(
+                self.llm, question, deadline=deadline)
 
         q.qtype = self._classify(question, q)
         q.requirements, q.verify_requirements = self._requirements(question, q)
@@ -252,8 +261,16 @@ class Orchestrator:
         if key in self._cache:  # AC-API6
             return self._cache[key]
         t0 = time.time()
+        # 🔴 LLM 예산 데드라인 (SPEC AC-API4 `REQUEST_TIMEOUT_S` 배선).
+        #    이 상수는 SPEC에 규정돼 있었으나 **코드 어디서도 읽히지 않았다**
+        #    (AITHOR `resilience-audit` 지적 → 전수 grep으로 확인).
+        #    배선하지 않으면 재시도·페이싱이 누적돼 최악 지연이 질의당 680초까지
+        #    간다 — 평가 타임아웃 300초를 넘겨 **정확도가 아니라 타임아웃으로 0점**이다.
+        #    결정론 경로는 지연 중앙값 0.00초이므로, 이 예산은 사실상 LLM 전용이고
+        #    소진되면 템플릿으로 강등된다(정확도 손실 0 — LLM 차단 시에도 177/177).
+        deadline = time.monotonic() + self.cfg.request_timeout_s
         try:
-            ans = self._run(question_id, question)
+            ans = self._run(question_id, question, deadline)
         except Exception as exc:  # AC-API2: 500 금지
             ans = Answer(
                 question_id=question_id, question=question,
@@ -266,8 +283,9 @@ class Orchestrator:
         self._cache[key] = ans
         return ans
 
-    def _run(self, question_id: str, question: str) -> Answer:
-        q = self.understand(question)
+    def _run(self, question_id: str, question: str,
+             deadline: float | None = None) -> Answer:
+        q = self.understand(question, deadline)
         trace: list[str] = [self._trace_understand(q)]
 
         facts: list[tools.FactHit] = []
@@ -385,8 +403,12 @@ class Orchestrator:
         #    LLM이 수치를 흘리면 여기서 잡히고 문장이 폐기된다.
         #    narrate() 자체도 수치 동일성을 보고 어긋나면 템플릿을 되돌린다 (2중 방어).
         #    (기권 경로는 위에서 이미 return했으므로 여기는 답변이 있는 경우뿐이다)
-        body, narr_why = narrate(self.llm, body, question=question)
+        body, narr_why = narrate(self.llm, body, question=question, deadline=deadline)
         trace.append(f"[3-b] 서술 — {narr_why}")
+        # LLM이 붙지 못한 경우를 응답과 카운터 양쪽에 남긴다.
+        degraded = "LLM 서술 적용" not in narr_why and "stub" not in narr_why
+        if degraded:
+            counters.bump("llm_degraded")
 
         # 검증 (V1~V5, 결정론)
         # 🔴 grounded에는 원문값뿐 아니라 **그 값에서 결정론적으로 파생된 표기**도 넣는다.
@@ -438,8 +460,12 @@ class Orchestrator:
             retrieved_context=ctx or "(검색 결과 없음)",
             think_trace="\n".join(trace), answer=body,
             citations=self._cited_only(body, cites),
-            confidence=("high" if (facts and rep.ok) else "medium" if rep.ok else "low"),
+            # 🔴 강등이면 confidence를 한 단계 낮춘다 — 같은 "high"로 두면
+            #    응답만 보고는 LLM이 죽었는지 알 수 없다.
+            confidence=(("high" if (facts and rep.ok) else "medium" if rep.ok else "low")
+                        if not degraded else ("medium" if rep.ok else "low")),
             verify_summary=rep.summary(),
+            degraded=degraded, degrade_reason=(narr_why if degraded else ""),
         )
 
     # ── trace / context / compose ───────────────────────────────────────
@@ -518,9 +544,16 @@ class Orchestrator:
         for s in sections[:6]:
             n += 1
             cid = f"C{n}"
+            # 🔴 근거 본문도 마스킹한다. 답변만 가리고 `retrieved_context`를
+            #    평문으로 두면 개인정보가 그대로 나간다 — 채점 대상 산출물이다.
+            #    주민번호·이메일·전화는 전 섹션, 생년월일은 PII 섹션 한정
+            #    (`_BIRTH`가 회계기간 "2024년 12월"과 형태가 겹친다).
+            body_txt = pii.mask_always(s["text"][:1200])
+            if pii.is_pii_section(s.get("path"), s.get("title")):
+                body_txt = pii.mask(body_txt)
             parts.append(
                 f"[{cid}] {s['corp_name']} {s['report_nm']} · 접수번호 {s['rcept_no']} · "
-                f"{s['path']} {s['title']}\n      {s['text'][:1200]}"
+                f"{s['path']} {s['title']}\n      {body_txt}"
             )
             cites.append({
                 "id": cid, "doc_id": s["doc_id"], "corp_name": s["corp_name"],
@@ -530,9 +563,12 @@ class Orchestrator:
         for h in hits[:6]:
             n += 1
             cid = f"C{n}"
+            hit_txt = pii.mask_always(h.doc.text[:600])
+            if pii.is_pii_section(h.doc.path, h.doc.title):
+                hit_txt = pii.mask(hit_txt)
             parts.append(
                 f"[{cid}] {h.doc.path} {h.doc.title} (score={h.score:.3f})\n"
-                f"      {h.doc.text[:600]}"
+                f"      {hit_txt}"
             )
             cites.append({
                 "id": cid, "doc_id": h.doc.doc_id, "corp_name": "",

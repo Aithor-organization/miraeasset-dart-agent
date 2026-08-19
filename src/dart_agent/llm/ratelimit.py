@@ -27,12 +27,22 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
 import time
 
 log = logging.getLogger(__name__)
 
-MAX_RETRIES = 3
+MAX_RETRIES = 2
+
+
+class DeadlineExceeded(RuntimeError):
+    """남은 예산으로는 이 호출을 끝낼 수 없다 — 호출자는 즉시 강등해야 한다."""
+
+
+def remaining(deadline: float | None) -> float:
+    """데드라인까지 남은 초. `None`이면 무한(∞)."""
+    return float("inf") if deadline is None else deadline - time.monotonic()
 _FALLBACK_WAIT = 5.0      # 헤더가 없을 때 (실측 리셋 창이 13초라 그 절반)
 _MAX_WAIT = 20.0          # 평가 타임아웃 300초 대비 안전 상한
 _DURATION = re.compile(r"(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?")
@@ -69,9 +79,19 @@ def retry_wait(headers, attempt: int) -> float:
         or headers.get("x-ratelimit-reset-tokens")
         or headers.get("x-ratelimit-reset-requests")
     )
-    if hinted is not None:
-        return min(hinted + 0.5, _MAX_WAIT)      # 경계에서 다시 걸리지 않게 여유
-    return min(_FALLBACK_WAIT * (2 ** attempt), _MAX_WAIT)
+    base = (min(hinted + 0.5, _MAX_WAIT) if hinted is not None
+            else min(_FALLBACK_WAIT * (2 ** attempt), _MAX_WAIT))
+    return base + _jitter(base)
+
+
+def _jitter(base: float) -> float:
+    """🔴 지터가 없으면 동시 요청이 **결정론적으로 동기화**된다.
+
+    헤더가 알려주는 리셋 시각은 모든 요청에게 동일하다. 거기에 고정 `+0.5`만
+    더하면 N개 요청이 **같은 순간 깨어나** 한꺼번에 다시 두드린다 — 확률적
+    충돌이 아니라 설계상 동기화다(thundering herd). 난수 폭을 얹어 흩는다.
+    """
+    return random.uniform(0.0, min(base * 0.3, 5.0))
 
 
 class Pacer:
@@ -97,11 +117,22 @@ class Pacer:
             or headers.get("x-ratelimit-reset-requests")
         )
         wait = min((reset or _FALLBACK_WAIT) + 0.5, _MAX_WAIT)
+        wait += _jitter(wait)          # 선제 대기도 동기화 대상이다
         self._sleep_until = time.monotonic() + wait
         log.info("rate limit 임박(토큰 %s·요청 %s) — %.1fs 선제 대기", tokens, requests, wait)
 
-    def wait(self) -> None:
-        remaining = self._sleep_until - time.monotonic()
-        if remaining > 0:
-            time.sleep(remaining)
+    def wait(self, deadline: float | None = None) -> None:
+        """필요한 만큼 잔다. **남은 예산을 넘겨 자지는 않는다.**
+
+        예산을 넘겨 자면 그 요청은 어차피 타임아웃이므로, 자는 시간이 순손실이다.
+        """
+        left = self._sleep_until - time.monotonic()
+        if left <= 0:
+            self._sleep_until = 0.0
+            return
+        budget = remaining(deadline)
+        if left >= budget:
+            self._sleep_until = 0.0
+            raise DeadlineExceeded(f"페이싱 {left:.1f}s > 잔여 {budget:.1f}s")
+        time.sleep(left)
         self._sleep_until = 0.0

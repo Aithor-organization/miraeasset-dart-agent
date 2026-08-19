@@ -68,7 +68,15 @@ def load_config() -> Config:
         db_path=_env_path("DART_DB_PATH", DEFAULT_DB),
         bm25_path=_env_path("DART_BM25_PATH", DEFAULT_BM25),
         search_score_threshold=_env_float("DART_SEARCH_THRESHOLD", 0.35),
-        request_timeout_s=_env_int("REQUEST_TIMEOUT_S", 25),
+        # 🔴 LLM 예산 (SPEC AC-API4). 25 → 120으로 상향 (2026-08-19).
+        #
+        #    이 상수는 SPEC에 있었지만 **코드 어디서도 읽히지 않았다** — 배선하며
+        #    값도 실측에 맞췄다. 25초는 정상 서술을 자른다:
+        #      골든셋 실측 지연 — 중앙 10.5s · p95 27.1s · 최대 65.4s
+        #    120초면 관측된 성공을 모두 보존하면서 평가 타임아웃 300초의 40%에
+        #    머문다. 예산이 끝나면 템플릿으로 강등되므로 **정확도 손실은 0**이다
+        #    (LLM 전면 차단에서도 골든셋 177/177).
+        request_timeout_s=_env_int("REQUEST_TIMEOUT_S", 120),
         clova_api_key=os.environ.get("CLOVA_API_KEY") or None,
         clova_base_url=os.environ.get(
             "CLOVA_BASE_URL", "https://clovastudio.stream.ntruss.com/v1/openai"

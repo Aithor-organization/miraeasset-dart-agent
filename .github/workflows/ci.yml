@@ -1,0 +1,52 @@
+# 🔴 CI 부재는 AITHOR `verifier-qa` 지적이었다:
+#    "게이트 4축 — 전부 사람 눈. CI 0. `.github` 부재.
+#     `eval/score.py`는 자기 docstring 외 어떤 스크립트에서도 호출되지 않음."
+#
+# 골든셋은 **인덱스(3.8GB)와 코퍼스(5.2GB)** 를 요구하므로 GitHub 러너에서
+# 돌릴 수 없다. 그래서 CI는 **인덱스가 필요 없는 것만** 강제하고,
+# 골든셋은 로컬 게이트(`scripts/gate.sh`)로 분리한다.
+# 돌릴 수 없는 것을 CI에 넣어 상시 빨간불로 두는 편이 더 나쁘다.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 의존성
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . || pip install fastapi uvicorn httpx pytest beautifulsoup4 lxml
+      - name: 단위 테스트 (인덱스 불필요분)
+        run: |
+          # 색인이 있어야 도는 e2e는 자동 skip 되도록 설계돼 있다.
+          python -m pytest tests/ -q --tb=short
+      - name: 🔴 결정론 가드 존재 확인
+        run: |
+          # 가드가 조용히 사라지는 것을 막는다 — 각 가드는 실사고에서 왔다.
+          python - <<'PY'
+          import pathlib, sys
+          need = {
+              "src/dart_agent/agent/narrate.py": [
+                  "_new_content", "_dropped_critical", "_has_injection", "_numbers"],
+              "src/dart_agent/llm/ratelimit.py": ["DeadlineExceeded", "_jitter", "Pacer"],
+              "src/dart_agent/agent/route_section.py": ["CATALOG", "_VALID"],
+              "src/dart_agent/api/ratelimit_mw.py": ["check"],
+          }
+          bad = []
+          for f, syms in need.items():
+              t = pathlib.Path(f).read_text()
+              bad += [f"{f}:{s}" for s in syms if s not in t]
+          if bad:
+              print("🔴 가드 소실:", *bad, sep="\n  "); sys.exit(1)
+          print("✅ 가드 전부 존재")
+          PY

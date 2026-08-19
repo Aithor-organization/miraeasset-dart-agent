@@ -45,6 +45,25 @@ def is_pii_section(path: str | None, title: str | None) -> bool:
     return bool(title and PII_SECTION_TITLES.search(title))
 
 
+def mask_always(text: str) -> str:
+    """🔴 **어느 섹션이든** 지워야 하는 식별자만 마스킹한다.
+
+    `mask()`는 `_BIRTH`가 회계기간("2024년 12월")과 형태가 겹쳐 전역 적용이
+    금지돼 있다. 그런데 주민번호·이메일·전화는 그런 충돌이 없다 — 전역으로
+    막지 못할 이유가 없었는데 막지 않고 있었다.
+
+    실측 결함 (AITHOR `security-engineer` 지적): 답변(`answer`)은 마스킹되는데
+    **`retrieved_context`는 평문**이었다. "삼성전자 임원 및 직원 현황"처럼
+    PII 질의 정규식에 안 걸리는 문장으로 VIII-1 섹션을 부르면, 답변에는 안
+    나와도 근거 본문 1,200자에 그대로 실려 나간다.
+    """
+    if not text:
+        return text
+    out = _RRN.sub("******-*******", text)
+    out = _EMAIL.sub("***@***", out)
+    return _PHONE.sub("***-****-****", out)
+
+
 def mask(text: str) -> str:
     """텍스트에서 개인 식별정보를 마스킹한다. 회사 수치·연도 표기는 보존.
 

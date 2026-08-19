@@ -35,12 +35,21 @@ from typing import Any
 
 import httpx
 
+from .. import counters
 from .provider import LLMResponse
-from .ratelimit import MAX_RETRIES, Pacer, retry_wait
+from .ratelimit import (MAX_RETRIES, DeadlineExceeded, Pacer, remaining,
+                        retry_wait)
 
 log = logging.getLogger(__name__)
 
-_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0)
+# 이보다 적게 남았으면 시도 자체를 하지 않는다 — HCX-007은 추론 모델이라
+# 최소 몇 초는 걸린다. 1~2초 남기고 부르면 절단만 만들고 예산을 태운다.
+_MIN_ATTEMPT_S = 3.0
+
+# 🔴 read 60초는 재시도 4회와 곱해지면 예산을 압도한다 (실측 계산: 340s/호출).
+#    HCX-007 정상 응답은 5~15초라 25초면 충분하고, 그 이상은 이상 상태다.
+_READ_TIMEOUT_S = 25.0
+_TIMEOUT = httpx.Timeout(connect=5.0, read=_READ_TIMEOUT_S, write=10.0, pool=5.0)
 
 
 class ClovaError(RuntimeError):
@@ -56,7 +65,18 @@ class ClovaProvider:
         self.model = model
         self._pacer = Pacer()
 
-    def _post_with_retry(self, payload: dict[str, Any]) -> httpx.Response:
+    @staticmethod
+    def _timeout(deadline: float | None) -> httpx.Timeout:
+        """read 타임아웃을 **잔여 예산 이하로** 자른다.
+
+        🔴 고정 60초는 예산을 넘긴다. 예산이 20초 남았는데 60초를 기다리면
+           그 40초는 응답이 와도 쓸 수 없는 시간이다 — 잘라야 한다.
+        """
+        read = min(_READ_TIMEOUT_S, max(_MIN_ATTEMPT_S, remaining(deadline) - 1.0))
+        return httpx.Timeout(connect=5.0, read=read, write=10.0, pool=5.0)
+
+    def _post_with_retry(self, payload: dict[str, Any],
+                         deadline: float | None = None) -> httpx.Response:
         """429/5xx를 헤더가 알려준 만큼 기다렸다가 재시도한다.
 
         🔴 재시도가 없으면 **실패가 실패를 부른다** — 429는 즉시 반환되므로
@@ -65,9 +85,15 @@ class ClovaProvider:
         """
         last: Exception | None = None
         for attempt in range(MAX_RETRIES + 1):
-            self._pacer.wait()                    # 한도에 닿기 전에 선제적으로 쉰다
+            # 🔴 남은 예산 안에서만 시도한다. 예산을 넘길 호출을 시작하면
+            #    그 요청은 어차피 평가 타임아웃으로 0점이고, 기다린 시간은
+            #    순손실이다 — 차라리 즉시 결정론 템플릿으로 강등하는 게 낫다.
+            left = remaining(deadline)
+            if left <= _MIN_ATTEMPT_S:
+                raise DeadlineExceeded(f"잔여 {left:.1f}s — 호출 생략")
+            self._pacer.wait(deadline)            # 한도에 닿기 전에 선제적으로 쉰다
             try:
-                with httpx.Client(timeout=_TIMEOUT) as client:
+                with httpx.Client(timeout=self._timeout(deadline)) as client:
                     r = client.post(
                         f"{self._base}/chat/completions",
                         headers={
@@ -80,8 +106,11 @@ class ClovaProvider:
                 raise ClovaError(f"clova transport error: {exc}") from exc
 
             if r.status_code < 400:
+                counters.bump("llm_calls")
                 self._pacer.observe(r.headers)
                 return r
+            if r.status_code == 429:
+                counters.bump("llm_429")
 
             # 429(한도)와 5xx(일시 장애)만 재시도한다. 4xx는 재시도해도 같은 답이다.
             if r.status_code != 429 and r.status_code < 500:
@@ -91,6 +120,10 @@ class ClovaProvider:
             if attempt == MAX_RETRIES:
                 break
             wait = retry_wait(r.headers, attempt)
+            # 잘 시간 + 다음 시도 최소치가 예산을 넘으면 재시도가 무의미하다
+            if wait + _MIN_ATTEMPT_S >= remaining(deadline):
+                raise DeadlineExceeded(
+                    f"재시도 대기 {wait:.1f}s > 잔여 {remaining(deadline):.1f}s")
             log.info("clova %s — %.1fs 후 재시도 (%d/%d)",
                      r.status_code, wait, attempt + 1, MAX_RETRIES)
             time.sleep(wait)
@@ -105,6 +138,7 @@ class ClovaProvider:
         response_format: dict[str, Any] | None = None,
         max_tokens: int = 8192,  # 🔴 2048은 3/5 확률로 빈 응답 — 모듈 docstring 참조
         temperature: float = 0.1,
+        deadline: float | None = None,   # time.monotonic() 기준. 넘기면 DeadlineExceeded
     ) -> LLMResponse:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -118,7 +152,7 @@ class ClovaProvider:
         if response_format:
             payload["response_format"] = response_format
 
-        r = self._post_with_retry(payload)
+        r = self._post_with_retry(payload, deadline)
 
         data = r.json()
         choice = (data.get("choices") or [{}])[0]

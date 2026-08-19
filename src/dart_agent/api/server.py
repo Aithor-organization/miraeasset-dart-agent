@@ -12,9 +12,11 @@ from __future__ import annotations
 import logging
 import time
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 
+from . import ratelimit_mw
+from .. import counters
 from ..config import load_config
 from ..llm.provider import build_providers
 from ..retrieval.bm25 import load_saved_index  # 레거시 pickle 캐시 폴백용
@@ -103,6 +105,25 @@ def _startup() -> None:
     )
 
 
+@app.middleware("http")
+async def _rate_limit(request: Request, call_next):
+    """🔴 유입 제한은 **미들웨어**로 건다.
+
+    엔드포인트 시그니처에 `Request`를 넣으면 함수를 직접 호출하는 테스트가
+    깨진다 (실측). 관심사도 분리되지 않는다 — 제한은 횡단 관심사다.
+    """
+    if request.url.path == "/answer":
+        limited = ratelimit_mw.check(request)
+        if limited is not None:
+            return limited
+    return await call_next(request)
+
+
+def _counters() -> dict:
+    """런타임 카운터 — `notes`(기동 스냅샷)가 못 보는 강등을 여기서 본다."""
+    return counters.snapshot()
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -113,7 +134,12 @@ def ready() -> dict:
     return {
         "ready": bool(_STATE.get("ready")),
         "sections_indexed": getattr(_STATE.get("index"), "size", 0),
+        # 🔴 `notes`는 **기동 시 스냅샷**이다 — 런타임 강등은 여기 안 나온다.
+        #    (AITHOR `lifecycle-operator` 지적: RUNBOOK이 지시하는 감시 지표가
+        #     실제로는 그 사건을 관측하지 못했다) → 런타임 카운터를 함께 낸다.
         "notes": _STATE.get("notes", []),
+        "runtime": _counters(),
+        "rate_limit": ratelimit_mw.stats(),
     }
 
 
@@ -133,8 +159,10 @@ def meta() -> dict:
 
 @app.get("/answer")
 def answer(
-    question_id: str = Query(..., description="평가 문항 식별자"),
-    question: str = Query(..., description="질의 원문"),
+    question_id: str = Query(..., max_length=200, description="평가 문항 식별자"),
+    # 🔴 길이 상한 — 없으면 초장문 질의로 HCX 토큰 예산을 태울 수 있다.
+    #    실제 공시 질문은 100자를 넘지 않는다 (골든셋 최장 62자).
+    question: str = Query(..., max_length=500, description="질의 원문"),
 ) -> JSONResponse:
     """계약 4필드를 항상 포함해 200으로 응답한다 (AC-API1, AC-API2)."""
     if not question or not question.strip():
