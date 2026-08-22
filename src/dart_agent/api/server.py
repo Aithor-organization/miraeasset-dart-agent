@@ -157,20 +157,36 @@ def meta() -> dict:
     }
 
 
+# 🔴 길이 상한 — 없으면 초장문 질의로 HCX 토큰 예산을 태울 수 있다.
+#    실제 공시 질문은 100자를 넘지 않는다 (골든셋 최장 62자).
+#
+# 🔴 그런데 상한을 `Query(max_length=...)`로 걸면 안 된다 (2026-08-23 실측):
+#    FastAPI가 **422 + `detail`만** 반환하고 계약 5필드가 통째로 빠진다.
+#    810자 질의로 확인했다 — `answer` 필드가 없으니 평가측 파서는 그 문항을
+#    읽을 방법이 없다. 거부가 아니라 **절단**이 맞다.
+_Q_MAX = 500
+_QID_MAX = 200
+
+
 @app.get("/answer")
 def answer(
-    question_id: str = Query(..., max_length=200, description="평가 문항 식별자"),
-    # 🔴 길이 상한 — 없으면 초장문 질의로 HCX 토큰 예산을 태울 수 있다.
-    #    실제 공시 질문은 100자를 넘지 않는다 (골든셋 최장 62자).
-    question: str = Query(..., max_length=500, description="질의 원문"),
+    question_id: str = Query(..., description="평가 문항 식별자"),
+    question: str = Query(..., description="질의 원문"),
 ) -> JSONResponse:
-    """계약 4필드를 항상 포함해 200으로 응답한다 (AC-API1, AC-API2)."""
-    if not question or not question.strip():
+    """계약 5필드를 항상 포함해 200으로 응답한다 (AC-API1, AC-API2)."""
+    question_id = (question_id or "")[:_QID_MAX]
+    truncated = len(question or "") > _Q_MAX
+    question = (question or "")[:_Q_MAX]
+
+    # 🔴 빈 질의도 200으로 답한다.
+    #    이전에는 400이었다. 계약 5필드는 있었지만, 평가측이 상태코드로
+    #    성패를 가른다면 정상 기권이 실패로 집계된다 — 얻는 것 없이 지는 위험이다.
+    if not question.strip():
         return JSONResponse(
-            status_code=400,
+            status_code=200,
             content={
-                "question_id": question_id, "question": question or "",
-                "retrieved_context": "", "think_trace": "[오류] question 파라미터가 비어 있습니다.",
+                "question_id": question_id, "question": question,
+                "retrieved_context": "", "think_trace": "[1] 질의가 비어 있어 해석할 수 없음",
                 "answer": "질의가 비어 있어 답변할 수 없습니다.",
                 "abstained": True, "abstain_reason": "empty_question",
             },
@@ -192,7 +208,13 @@ def answer(
 
     try:
         ans = orch.answer(question_id, question)
-        return JSONResponse(status_code=200, content=ans.to_payload())
+        payload = ans.to_payload()
+        if truncated:
+            # 잘라낸 사실을 숨기지 않는다 — 근거 산출물에 남긴다 (D4).
+            payload["think_trace"] = (
+                f"[주의] 질의가 {_Q_MAX}자를 넘어 절단됨\n" + payload.get("think_trace", "")
+            )
+        return JSONResponse(status_code=200, content=payload)
     except Exception as exc:  # 최후 방어 — 500 금지
         log.exception("answer failed: %s", exc)
         return JSONResponse(

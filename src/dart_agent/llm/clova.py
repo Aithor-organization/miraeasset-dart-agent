@@ -165,6 +165,12 @@ class ClovaProvider:
         #    finish_reason='length' 또는 reasoning이 한도에 닿았으면 절단으로 본다.
         detail = usage.get("completion_tokens_details") or {}
         reasoning = int(detail.get("reasoning_tokens") or 0)
+
+        # 🔴 토큰 누적 — 크레딧이 유한하므로 비용은 관측 대상이다.
+        #    AITHOR eval-audit 게이트 4축 중 `cost`가 우리에게만 없었다.
+        #    `/ready`의 runtime으로 노출되고 scripts/gate.sh가 전후 차이를 잰다.
+        counters.bump("llm_prompt_tokens", int(usage.get("prompt_tokens") or 0))
+        counters.bump("llm_completion_tokens", int(usage.get("completion_tokens") or 0))
         truncated = not content.strip() and not tool_calls and (
             choice.get("finish_reason") == "length" or reasoning >= max_tokens * 0.95
         )

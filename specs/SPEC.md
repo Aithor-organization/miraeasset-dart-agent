@@ -305,7 +305,7 @@ def decide_abstention(qspec, hits, search_top_score) -> Abstention | None
 GET /answer?question_id={id}&question={q}
 ```
 
-**AC-API1** 응답은 주최측 명시 4필드 `question_id`/`question`/`retrieved_context`/`think_trace`/`answer`를 **항상** 포함한다 (누락 시 실패).
+**AC-API1** 응답은 주최측 명시 5필드 `question_id`/`question`/`retrieved_context`/`think_trace`/`answer`를 **항상** 포함한다 (누락 시 실패).
 **AC-API2** **HTTP 500을 반환하지 않는다.** 모든 내부 예외를 잡아 abstention 응답 + 200으로 변환.
 **AC-API3** `question` 미제공 시 400 + 계약 형태 JSON.
 **AC-API4** 타임아웃 `REQUEST_TIMEOUT_S`(기본 **120**) 초과 시 부분 근거 기반 응답.
@@ -347,7 +347,7 @@ class EmbeddingProvider(Protocol):
 **AC-TEST3** 단위 정규화 테스트 — 원/천원/백만원 + 음수 괄호 + 미검출.
 **AC-TEST4** 별칭 테스트 — 통용명 8종 전부 정확한 `corp_code`로 해석.
 **AC-TEST5** V1~V5 검증기 테스트 — 환각 숫자 주입 시 차단 확인.
-**AC-TEST6** API 계약 테스트 — 4필드 존재 + 500 미발생 + abstention 경로.
+**AC-TEST6** API 계약 테스트 — 5필드 존재 + 500 미발생 + abstention 경로.
 **AC-TEST7** `pytest` 전체 통과가 완료 게이트다.
 
 ---
@@ -363,7 +363,7 @@ class EmbeddingProvider(Protocol):
 | D5 | BM25 검색 동작 (kiwi 또는 폴백) | pytest |
 | D6 | 도구 6종 순수 함수 동작 | pytest |
 | D7 | 검증기 V1~V5 동작 | pytest |
-| D8 | `GET /answer` 4필드 반환 + 500 미발생 | pytest (TestClient) |
+| D8 | `GET /answer` 5필드 반환 + 500 미발생 | pytest (TestClient) |
 | D9 | 키 없이 T1 수치 질의 정답 반환 (fast-path) | 실제 DB로 E2E |
 | D10 | `pytest` 전체 통과 | `python3 -m pytest` |
 
@@ -427,5 +427,5 @@ LLM은 품질 향상 요소이지 정답 생성 주체가 아니다.
 **AC-N11** 재시도가 소진되면 결정론 템플릿으로 강등한다. 5xx 전파 금지 (AC-API2와 동일 원칙).
 
 **AC-N13** 유입 제한: IP당 분당 `RATE_LIMIT_PER_MIN`(기본 60)회. 초과 시 429를 반환하되
-**계약 4필드를 유지**한다. `Pacer`(자기 페이싱)와는 다른 층이다 — 전자는 우리가 HCX를
+**계약 5필드를 유지**한다. `Pacer`(자기 페이싱)와는 다른 층이다 — 전자는 우리가 HCX를
 부르는 속도, 후자는 남이 우리를 부르는 속도를 다룬다.

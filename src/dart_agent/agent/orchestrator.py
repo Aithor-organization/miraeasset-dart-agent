@@ -122,7 +122,7 @@ class Answer:
     degrade_reason: str = ""
 
     def to_payload(self) -> dict:
-        """주최측 명시 4필드 + 부가 필드 (AC-API1)."""
+        """주최측 명시 5필드 + 부가 필드 (AC-API1)."""
         return {
             "question_id": self.question_id,
             "question": self.question,

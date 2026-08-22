@@ -79,13 +79,42 @@ def value_ok(expect: int, answer: str, *, tol: float = 0.005) -> bool:
     return False
 
 
-def grade(item: dict, resp: dict) -> tuple[bool, str]:
+_CONTRACT = ("question_id", "question", "retrieved_context", "think_trace", "answer")
+
+
+def grade(item: dict, resp: dict, elapsed_ms: float | None = None) -> tuple[bool, str]:
     """(정답 여부, 사유). 사유는 실패 분석용이라 구체적으로 적는다."""
     answer = resp.get("answer") or ""
     abstained = bool(resp.get("abstained"))
     reason = resp.get("abstain_reason")
     cites = resp.get("citations") or []
     ctx = resp.get("retrieved_context") or ""
+
+    # ── boundary — 깨지지 않는가를 본다 (값이 아니라 계약) ──
+    #    AITHOR eval-audit의 '경계' 필수 케이스. 빈 입력·상한 초과·무의미 입력에서
+    #    5필드를 유지하며 200으로 답하는지가 기준이다.
+    #    🔴 422로 계약이 통째로 빠진 실사고(2026-08-23, 810자 질의)에서 왔다.
+    if item["kind"] == "boundary":
+        missing = [k for k in _CONTRACT if k not in resp]
+        if missing:
+            return False, f"계약 필드 누락: {missing}"
+        if item.get("expect_abstain") and not abstained:
+            return False, f"기권해야 하는데 답변함: {answer[:50]}"
+        if item.get("forbid_abstain") and abstained:
+            return False, f"답해야 하는데 기권함: {reason}"
+        return True, f"계약 유지 (기권={abstained}, 사유={reason})"
+
+    # ── regression — 과거 사고가 되살아났는지 본다 ──
+    #    정답 여부는 base_kind로 채점하고, 사고의 축(보통 지연)을 추가로 건다.
+    if item["kind"] == "regression":
+        cap = item.get("max_latency_ms")
+        if cap is not None and elapsed_ms is not None and elapsed_ms > cap:
+            return False, (f"회귀: {elapsed_ms / 1000:.0f}s > 상한 {cap / 1000:.0f}s "
+                           f"— {item.get('meta', {}).get('incident', '')}")
+        base = dict(item, kind=item["meta"]["base_kind"])
+        ok, why = grade(base, resp)
+        return ok, (f"회귀 없음 ({why}"
+                    + (f", {elapsed_ms / 1000:.0f}s)" if elapsed_ms is not None else ")"))
 
     # ── 기권이 정답인 문항 ──
     if item.get("expect_abstain"):
@@ -165,10 +194,23 @@ def grade(item: dict, resp: dict) -> tuple[bool, str]:
 
 
 def ask(url: str, qid: str, question: str, timeout: float) -> dict:
+    """응답 본문을 돌려준다. 🔴 4xx도 예외로 만들지 않는다.
+
+    boundary 케이스는 **비정상 상태코드에서 계약이 유지되는지**가 관심사라,
+    HTTPError로 던져버리면 정작 봐야 할 본문을 못 본다.
+    """
     qs = urllib.parse.urlencode({"question_id": qid, "question": question})
     req = urllib.request.Request(f"{url.rstrip('/')}/answer?{qs}")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = json.loads(r.read().decode("utf-8"))
+            return {**body, "_http": r.status}
+    except urllib.error.HTTPError as exc:          # 4xx/5xx — 본문을 살려서 채점한다
+        raw = exc.read().decode("utf-8", "replace")
+        try:
+            return {**json.loads(raw), "_http": exc.code}
+        except json.JSONDecodeError:
+            return {"_http": exc.code, "_raw": raw[:200]}
 
 
 def main() -> int:
@@ -207,11 +249,15 @@ def main() -> int:
         if err:
             ok, why = False, f"요청 실패: {err}"
         else:
-            ok, why = grade(item, resp)
+            ok, why = grade(item, resp, elapsed_ms=ms)
 
         by_kind[item["kind"]].append(ok)
         results.append({**item, "ok": ok, "why": why, "latency_ms": round(ms),
-                        "got_answer": (resp.get("answer") or "")[:200]})
+                        # 🔴 답변 전문과 근거를 남긴다 — `eval/faithfulness.py`가
+                        #    이 둘로 근거 충실성을 채점한다. 200자로 자르면
+                        #    뒷부분 주장이 통째로 채점에서 빠진다.
+                        "got_answer": resp.get("answer") or "",
+                        "got_context": resp.get("retrieved_context") or ""})
 
         mark = "✅" if ok else "❌"
         print(f"  {mark} [{n:>3}/{len(items)}] {item['question_id']:<9} {why}")

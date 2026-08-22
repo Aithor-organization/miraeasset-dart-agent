@@ -248,11 +248,20 @@ def test_answer_always_returns_contract_fields(client, question):
     assert body["answer"].strip(), "answer 빈 문자열 금지 (AC-AB1)"
 
 
-def test_empty_question_returns_400_with_contract_shape(client):
+def test_empty_question_returns_200_with_contract_shape(client):
+    """🔴 2026-08-23 정정: 400 → 200.
+
+    이전에는 빈 질의에 400을 돌려줬다. 계약 필드는 다 있었지만, 평가측이
+    상태코드로 성패를 가르면 **정상 기권이 실패로 집계**된다. 400을 지켜서
+    얻는 것은 없고 잃을 것만 있어 200 + `abstained`로 바꿨다.
+    """
     r = client.get("/answer", params={"question_id": "T", "question": " "})
-    assert r.status_code == 400
+    assert r.status_code == 200
+    body = r.json()
     for f in CONTRACT_FIELDS:
-        assert f in r.json()
+        assert f in body
+    assert body["abstained"] is True
+    assert body["abstain_reason"] == "empty_question"
 
 
 def test_forbidden_question_abstains(client):

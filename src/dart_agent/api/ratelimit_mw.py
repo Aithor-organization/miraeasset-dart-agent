@@ -67,7 +67,7 @@ def check(request: Request) -> JSONResponse | None:
             return JSONResponse(
                 status_code=429,
                 headers={"Retry-After": str(retry)},
-                # 🔴 429여도 계약 4필드를 유지한다 — 평가측 파서가 깨지지 않게.
+                # 🔴 429여도 계약 5필드를 유지한다 — 평가측 파서가 깨지지 않게.
                 content={
                     "question_id": request.query_params.get("question_id", ""),
                     "question": request.query_params.get("question", ""),
