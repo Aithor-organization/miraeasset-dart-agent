@@ -115,6 +115,23 @@ curl -s http://<host>/ready        # sections_indexed 확인
 🔴 **평가 기간에는 하지 마라.** 재빌드 중 `/ready`가 false가 되고 답변이 전부 실패한다.
 사전에 빌드해 두고, 서버에는 **완성된 인덱스를 올린다**.
 
+### 4-1. 벡터 스토어 (하이브리드 검색용, 선택)
+
+🔴 **`index/`는 `.gitignore` 대상이다 — 저장소에 없다.** `dart.sqlite`와 마찬가지로
+**서버에 파일을 직접 올려야 한다.** 배포 시 빠뜨리기 쉬운 지점이므로 여기 명시한다.
+
+```bash
+python3 scripts/embed_sections.py --scope all-annual --dry-run   # 대상/시간 확인
+python3 scripts/embed_sections.py --scope all-annual             # 중단돼도 재실행하면 이어서 함
+scp index/embeddings.sqlite <서버>:<배포경로>/index/             # dart.sqlite와 같은 위치
+```
+
+- 파일이 없거나 `DART_HYBRID`가 꺼져 있으면 **BM25 단독으로 자동 강등** — 서버는 정상 동작한다.
+  `/ready`의 `notes`에 강등 사유가 표시된다.
+- 활성화: 서버 환경변수 `DART_HYBRID=1`. 활성화 전 골든셋을 한 번 돌려 회귀가 없는지 볼 것.
+- 범위: `goldset-corps`(파일럿 ~2.9K) · `all-annual`(70개사 최신 사업보고서 ~10K, 약 2시간) ·
+  `all`(전 유효문서 ~102K, 약 30시간).
+
 ---
 
 ## 5. 롤백
