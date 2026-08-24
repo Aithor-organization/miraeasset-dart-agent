@@ -200,34 +200,43 @@ def _norm_tool_calls(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 class ClovaEmbeddingProvider:
-    name = "clova-bge-m3"
     dim = 1024
 
     def __init__(self, api_key: str, base_url: str, model: str) -> None:
         self._key = api_key
         self._base = base_url.rstrip("/")
         self.model = model
+        # 🔴 name은 벡터 스토어의 저장·resume 키다. 고정 문자열이면 모델을 바꿔도
+        #    기존 행을 완료로 오인한다 (Codex 리뷰 2026-08-24) — 실제 모델명 반영.
+        #    bge-m3 기본값에서는 기존 키 "clova-bge-m3"와 동일해 하위호환.
+        self.name = f"clova-{model}"
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
-        try:
-            with httpx.Client(timeout=_TIMEOUT) as client:
-                r = client.post(
-                    f"{self._base}/embeddings",
-                    headers={
-                        "Authorization": f"Bearer {self._key}",
-                        "Content-Type": "application/json",
-                    },
-                    # encoding_format은 float만 지원 (base64 미지원)
-                    json={"model": self.model, "input": texts, "encoding_format": "float"},
-                )
-        except httpx.HTTPError as exc:
-            raise ClovaError(f"clova embed transport error: {exc}") from exc
-        if r.status_code >= 400:
-            raise ClovaError(f"clova embed {r.status_code}: {r.text[:300]}")
-        data = r.json()
-        return [item["embedding"] for item in sorted(data["data"], key=lambda d: d["index"])]
+        """🔴 CLOVA OpenAI-compat `/embeddings`는 `input`에 **문자열만** 받는다.
+
+        리스트(배치)와 `encoding_format` 파라미터는 400 "Invalid parameter:
+        convert error"로 거부된다 (실측 2026-08-24 — 4가지 형식 대조로 확정,
+        str 단건만 200 · dim=1024). 따라서 텍스트당 1요청으로 순회한다.
+        레이트리밋 페이싱은 호출자 책임 (scripts/embed_sections.py 참조).
+        """
+        out: list[list[float]] = []
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            for text in texts:
+                try:
+                    r = client.post(
+                        f"{self._base}/embeddings",
+                        headers={
+                            "Authorization": f"Bearer {self._key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={"model": self.model, "input": text},
+                    )
+                except httpx.HTTPError as exc:
+                    raise ClovaError(f"clova embed transport error: {exc}") from exc
+                if r.status_code >= 400:
+                    raise ClovaError(f"clova embed {r.status_code}: {r.text[:300]}")
+                out.append(r.json()["data"][0]["embedding"])
+        return out
 
 
 class ClovaReranker:

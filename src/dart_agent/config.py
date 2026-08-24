@@ -55,6 +55,13 @@ class Config:
     bm25_b: float
     rrf_k: int
     top_k: int
+    # 하이브리드 (파일럿 — 기본 OFF. 벡터 스토어 + CLOVA 키 둘 다 있어야 발동)
+    hybrid_search: bool
+    vectors_path: Path
+    # 🔴 하이브리드 융합 파라미터는 rrf_k(=60, 레거시)와 **별개**다.
+    #    실측으로 정한 값이라 같이 묶으면 한쪽을 고칠 때 다른 쪽이 깨진다.
+    hybrid_rrf_k: int
+    hybrid_vec_weight: float
 
     @property
     def has_llm(self) -> bool:
@@ -87,6 +94,13 @@ def load_config() -> Config:
         bm25_b=_env_float("BM25_B", 0.75),
         rrf_k=_env_int("RRF_K", 60),
         top_k=_env_int("SEARCH_TOP_K", 8),
+        hybrid_search=os.environ.get("DART_HYBRID", "").lower() in ("1", "true", "on"),
+        vectors_path=_env_path(
+            "DART_VECTORS_PATH", PROJECT_ROOT / "index" / "embeddings.sqlite"
+        ),
+        # 골든셋 section 25문항 실측값 (bm25.rrf_fuse docstring의 표 참조)
+        hybrid_rrf_k=_env_int("HYBRID_RRF_K", 10),
+        hybrid_vec_weight=_env_float("HYBRID_VEC_WEIGHT", 2.0),
     )
 
 

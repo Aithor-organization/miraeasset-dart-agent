@@ -141,11 +141,15 @@ class Answer:
 
 
 class Orchestrator:
-    def __init__(self, conn: sqlite3.Connection, cfg: Config, index=None, llm=None):
+    def __init__(self, conn: sqlite3.Connection, cfg: Config, index=None, llm=None,
+                 vectors=None, embedder=None):
         self.conn = conn
         self.cfg = cfg
         self.index = index
         self.llm = llm
+        # 하이브리드 검색 (파일럿) — 둘 다 있어야 doc_search가 RRF 융합한다
+        self.vectors = vectors
+        self.embedder = embedder
         self._cache: dict[tuple[str, str], Answer] = {}
 
     # ── 질의 이해 ───────────────────────────────────────────────────────
@@ -335,10 +339,14 @@ class Orchestrator:
                 year=q.year, doc_subtype=q.doc_subtype,
             )
         if not facts and not events and not sections and not (chain and chain.nodes):
-            plan.append("doc_search(hybrid BM25)")
+            hybrid_on = self.vectors is not None and self.embedder is not None
+            plan.append("doc_search(BM25+vec RRF)" if hybrid_on
+                        else "doc_search(hybrid BM25)")
             search_hits = tools.doc_search(
                 self.index, question, corp=q.corp_codes or None,
                 years=years or None, top_k=self.cfg.top_k,
+                vectors=self.vectors, embedder=self.embedder, conn=self.conn,
+                rrf_k=self.cfg.hybrid_rrf_k, vec_weight=self.cfg.hybrid_vec_weight,
             )
 
         # 연산

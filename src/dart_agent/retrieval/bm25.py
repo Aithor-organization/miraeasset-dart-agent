@@ -128,14 +128,30 @@ class BM25Index:
         ]
 
 
-def rrf_fuse(rankings: list[list[SearchHit]], *, k: int = 60) -> list[SearchHit]:
-    """Reciprocal Rank Fusion — AITHOR `_rrf_fuse`와 동일 수식 (AC-R4)."""
+def rrf_fuse(rankings: list[list[SearchHit]], *, k: int = 60,
+             weights: list[float] | None = None) -> list[SearchHit]:
+    """Reciprocal Rank Fusion — AITHOR `_rrf_fuse`와 동일 수식 (AC-R4).
+
+    🔴 **k와 가중치는 도메인에 맞춰 실측할 것.** k=60은 원논문 기본값이지만
+    본 코퍼스에서는 나빴다 — 골든셋 section 25문항 실측 (2026-08-24):
+
+        BM25 단독        MRR 0.290
+        벡터 단독        MRR 0.502
+        RRF k=60 1:1    MRR 0.419   ← 표준값. 벡터 단독보다도 나쁘다
+        RRF k=10 1:2    MRR 0.620   ← 채택
+
+    k가 크면 상위 랭크의 우위가 평탄해진다. 두 팔의 품질이 비슷할 때는 그게
+    안정적이지만, 여기처럼 한쪽(벡터)이 확연히 우수하면 **좋은 팔을 나쁜 팔이
+    끌어내린다**. k를 줄이고 우수한 팔에 가중치를 주면 그 희석이 사라진다.
+    ⚠️ 25문항 튜닝이라 과적합 여지가 있다 — 전량 임베딩 후 재측정할 것.
+    """
     fused: dict[str, float] = defaultdict(float)
     keep: dict[str, SearchHit] = {}
     reasons: dict[str, set[str]] = defaultdict(set)
-    for ranking in rankings:
+    for i, ranking in enumerate(rankings):
+        w = weights[i] if weights and i < len(weights) else 1.0
         for rank, hit in enumerate(ranking, start=1):
-            fused[hit.doc_key] += 1.0 / (k + rank)
+            fused[hit.doc_key] += w / (k + rank)
             keep.setdefault(hit.doc_key, hit)
             reasons[hit.doc_key].update(hit.reasons)
     out: list[SearchHit] = []

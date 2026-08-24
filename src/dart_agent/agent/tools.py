@@ -267,20 +267,79 @@ def get_section(
     return out
 
 
-# ── 3. doc_search (BM25; 벡터는 EmbeddingProvider 있을 때 호출부에서 융합) ──
+# ── 3. doc_search (BM25 단독 / vectors+embedder 주입 시 RRF 하이브리드) ──
 
 
 def doc_search(index, query: str, *, corp: list[str] | None = None,
                doc_groups: list[str] | None = None, years: list[int] | None = None,
-               top_k: int = 8):
+               top_k: int = 8, vectors=None, embedder=None, conn=None, rrf_k: int = 10,
+               vec_weight: float = 2.0):
+    """vectors(VectorStore)와 embedder가 함께 주입되면 BM25+벡터 RRF 융합.
+
+    🔴 **점수 의미 보존**: abstention이 `max(hit.score)`를 BM25 스케일 임계값
+    (기본 0.35)과 비교한다 — RRF 점수(≤0.033)를 그대로 돌려주면 전 질의가
+    기권으로 쏠린다. 융합은 **순서**를 바꾸고, 점수는 다음 규칙으로 복원한다
+    (Codex 리뷰 2026-08-24 major 2건 반영):
+    - BM25 팔에 있던 문서 → BM25 점수 그대로
+    - 벡터 단독 문서 → **코사인 유사도** (0~1). 상수 0.0을 주면 BM25가 못 찾고
+      벡터만 정답을 찾은 경우 전부 기권으로 죽는다. 임계값 0.35는 BM25 기준
+      보정값이라 스케일이 다르다는 한계는 있으나(관련 섹션 bge-m3 코사인은
+      통상 0.5+), 벡터 팔의 발견을 기권 게이트에 전달할 유일한 통로다.
+    - BM25 1위는 **항상 결과에 포함** — RRF 절단에서 탈락하면 max(score)가
+      무너져 0.35 게이트가 정상 질의를 오기권한다.
+
+    🔴 **가용성 우선**: 질의 임베딩 실패(레이트리밋/네트워크)는 BM25 단독으로
+    조용히 강등한다. 검색이 죽는 것보다 융합을 포기하는 쪽이 옳다 (AC-R5).
+    """
     if index is None or index.size == 0:
         return []
-    return index.search(
-        query, top_k=top_k,
-        corp_codes=set(corp) if corp else None,
-        doc_groups=set(doc_groups) if doc_groups else None,
-        years=set(years) if years else None,
+    corp_set = set(corp) if corp else None
+    group_set = set(doc_groups) if doc_groups else None
+    # 벡터 스토어는 periodic 문서만 담는다 — 다른 그룹 지정 질의에는 벡터 팔 제외
+    hybrid = (vectors is not None and embedder is not None
+              and (group_set is None or "periodic" in group_set))
+    if not hybrid:
+        return index.search(
+            query, top_k=top_k, corp_codes=corp_set,
+            doc_groups=group_set, years=set(years) if years else None,
+        )
+
+    from ..retrieval.bm25 import SearchHit, rrf_fuse
+    from ..retrieval.vectors import fetch_doc
+
+    bm25 = index.search(
+        query, top_k=30, corp_codes=corp_set,
+        doc_groups=group_set, years=set(years) if years else None,
     )
+    try:
+        qvec = embedder.embed([query])[0]
+    except Exception:
+        return bm25[:top_k]
+    vhits = vectors.search(qvec, top_k=30, corp_codes=corp_set,
+                           years=set(years) if years else None)
+    if not vhits:
+        return bm25[:top_k]
+
+    # rrf_fuse는 first-seen Doc을 유지한다 — bm25를 앞에 두어 본문 있는 Doc 우선.
+    # 가중치는 벡터 팔 우위 실측 반영 (rrf_fuse docstring의 MRR 표)
+    fused = rrf_fuse([bm25, vhits], k=rrf_k, weights=[1.0, vec_weight])[:top_k]
+    if bm25 and all(h.doc_key != bm25[0].doc_key for h in fused):
+        fused[-1] = bm25[0]                    # BM25 1위 생존 보장 (위 docstring)
+    bm_score = {h.doc_key: h.score for h in bm25}
+    cos_score = {h.doc_key: h.score for h in vhits}
+    out = []
+    for h in fused:
+        doc = h.doc
+        if not doc.text and conn is not None:
+            doc = fetch_doc(conn, h.doc_key)   # 벡터 단독 승자만 본문 보강
+            if doc is None:                    # 비유효 문서로 강등된 섹션 → 제외
+                continue
+        out.append(SearchHit(
+            h.doc_key,
+            bm_score.get(h.doc_key) or cos_score.get(h.doc_key, 0.0),
+            doc, h.reasons,
+        ))
+    return out
 
 
 # ── 4. event_query ─────────────────────────────────────────────────────────

@@ -97,11 +97,32 @@ def _startup() -> None:
         _STATE["notes"].append("kiwipiepy 미설치 → 문자 n-gram BM25로 강등 (검색 품질 저하)")
         log.warning(_STATE["notes"][-1])
 
-    _STATE["orch"] = Orchestrator(conn, cfg, index=idx, llm=llm)
+    # 하이브리드 검색 (파일럿, 기본 OFF) — DART_HYBRID=1 + 벡터 스토어 + CLOVA 키
+    vs = None
+    if cfg.hybrid_search:
+        if emb is None:
+            _STATE["notes"].append("DART_HYBRID=1이나 CLOVA 키 없음 → BM25 단독")
+        else:
+            from ..retrieval.vectors import VectorStore
+            vs = VectorStore.load(cfg.vectors_path, model=emb.name)
+            if vs is None:
+                _STATE["notes"].append(
+                    f"DART_HYBRID=1이나 벡터 스토어 없음({cfg.vectors_path}) → BM25 단독. "
+                    "scripts/embed_sections.py로 생성"
+                )
+            else:
+                _STATE["notes"].append(
+                    f"하이브리드 검색 ON — 벡터 {vs.size:,}개 (파일럿: 커버 구간 부분)"
+                )
+        log.warning(_STATE["notes"][-1])
+
+    _STATE["orch"] = Orchestrator(conn, cfg, index=idx, llm=llm,
+                                  vectors=vs, embedder=emb if vs else None)
     _STATE["ready"] = True
     log.info(
         "ready in %.1fs · sections=%d · tokenizer=%s · llm=%s",
-        time.time() - t0, idx.size, tok_mode, getattr(llm, "name", "?"),
+        # idx=None(FTS 빌드 실패 → 검색 비활성)에서도 기동은 살아야 한다
+        time.time() - t0, getattr(idx, "size", 0), tok_mode, getattr(llm, "name", "?"),
     )
 
 
