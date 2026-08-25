@@ -1,0 +1,30 @@
+{"question_id": "HLD-001", "kind": "section", "question": "CJ제일제당의 사업의 개요를 알려줘", "expect_section": "II-1", "expect_abstain": false, "meta": {"corp": "CJ제일제당", "path": "II-1"}}
+{"question_id": "HLD-002", "kind": "section", "question": "HD현대일렉트릭의 주요 제품 및 서비스는?", "expect_section": "II-2", "expect_abstain": false, "meta": {"corp": "HD현대일렉트릭", "path": "II-2"}}
+{"question_id": "HLD-003", "kind": "section", "question": "HD현대중공업의 주요 투자 계획은?", "expect_section": "II-3", "expect_abstain": false, "meta": {"corp": "HD현대중공업", "path": "II-3"}}
+{"question_id": "HLD-004", "kind": "section", "question": "HMM의 원재료 및 생산설비 현황은?", "expect_section": "II-4", "expect_abstain": false, "meta": {"corp": "HMM", "path": "II-4"}}
+{"question_id": "HLD-005", "kind": "section", "question": "KT의 주요계약 및 연구개발활동은?", "expect_section": "II-6", "expect_abstain": false, "meta": {"corp": "KT", "path": "II-6"}}
+{"question_id": "HLD-006", "kind": "section", "question": "LG생활건강의 배당 정책은?", "expect_section": "III-6", "expect_abstain": false, "meta": {"corp": "LG생활건강", "path": "III-6"}}
+{"question_id": "HLD-007", "kind": "section", "question": "LG씨엔에스의 계열회사 현황은?", "expect_section": "IX", "expect_abstain": false, "meta": {"corp": "LG씨엔에스", "path": "IX"}}
+{"question_id": "HLD-008", "kind": "section", "question": "LG에너지솔루션의 주요 제품 및 서비스는?", "expect_section": "II-2", "expect_abstain": false, "meta": {"corp": "LG에너지솔루션", "path": "II-2"}}
+{"question_id": "HLD-009", "kind": "section", "question": "LG유플러스의 주요 투자 계획은?", "expect_section": "II-3", "expect_abstain": false, "meta": {"corp": "LG유플러스", "path": "II-3"}}
+{"question_id": "HLD-010", "kind": "section", "question": "LIG넥스원의 주요 투자 계획은?", "expect_section": "II-3", "expect_abstain": false, "meta": {"corp": "LIG넥스원", "path": "II-3"}}
+{"question_id": "HLD-011", "kind": "section", "question": "LS ELECTRIC의 원재료 및 생산설비 현황은?", "expect_section": "II-4", "expect_abstain": false, "meta": {"corp": "LS ELECTRIC", "path": "II-4"}}
+{"question_id": "HLD-012", "kind": "section", "question": "NAVER의 주요계약 및 연구개발활동은?", "expect_section": "II-6", "expect_abstain": false, "meta": {"corp": "NAVER", "path": "II-6"}}
+{"question_id": "HLD-013", "kind": "section", "question": "OCI홀딩스의 배당 정책은?", "expect_section": "III-6", "expect_abstain": false, "meta": {"corp": "OCI홀딩스", "path": "III-6"}}
+{"question_id": "HLD-014", "kind": "section", "question": "POSCO홀딩스의 주요 제품 및 서비스는?", "expect_section": "II-2", "expect_abstain": false, "meta": {"corp": "POSCO홀딩스", "path": "II-2"}}
+{"question_id": "HLD-015", "kind": "section", "question": "SK텔레콤의 사업의 개요를 알려줘", "expect_section": "II-1", "expect_abstain": false, "meta": {"corp": "SK텔레콤", "path": "II-1"}}
+{"question_id": "HLD-016", "kind": "section", "question": "기아의 주요 제품 및 서비스는?", "expect_section": "II-2", "expect_abstain": false, "meta": {"corp": "기아", "path": "II-2"}}
+{"question_id": "HLD-017", "kind": "section", "question": "대우건설의 주요계약 및 연구개발활동은?", "expect_section": "II-6", "expect_abstain": false, "meta": {"corp": "대우건설", "path": "II-6"}}
+{"question_id": "HLD-018", "kind": "section", "question": "두산로보틱스의 계열회사 현황은?", "expect_section": "IX", "expect_abstain": false, "meta": {"corp": "두산로보틱스", "path": "IX"}}
+{"question_id": "HLD-019", "kind": "section", "question": "디앤디파마텍의 주요계약 및 연구개발활동은?", "expect_section": "II-6", "expect_abstain": false, "meta": {"corp": "디앤디파마텍", "path": "II-6"}}
+{"question_id": "HLD-020", "kind": "section", "question": "레인보우로보틱스의 배당 정책은?", "expect_section": "III-6", "expect_abstain": false, "meta": {"corp": "레인보우로보틱스", "path": "III-6"}}
+{"question_id": "HLD-021", "kind": "section", "question": "미래에셋증권의 주요 투자 계획은?", "expect_section": "II-3", "expect_abstain": false, "meta": {"corp": "미래에셋증권", "path": "II-3"}}
+{"question_id": "HLD-022", "kind": "section", "question": "삼성바이오로직스의 사업의 개요를 알려줘", "expect_section": "II-1", "expect_abstain": false, "meta": {"corp": "삼성바이오로직스", "path": "II-1"}}
+{"question_id": "HLD-023", "kind": "section", "question": "삼성전기의 주요 제품 및 서비스는?", "expect_section": "II-2", "expect_abstain": false, "meta": {"corp": "삼성전기", "path": "II-2"}}
+{"question_id": "HLD-024", "kind": "section", "question": "삼성전자의 주요 투자 계획은?", "expect_section": "II-3", "expect_abstain": false, "meta": {"corp": "삼성전자", "path": "II-3"}}
+{"question_id": "HLD-025", "kind": "section", "question": "삼성중공업의 원재료 및 생산설비 현황은?", "expect_section": "II-4", "expect_abstain": false, "meta": {"corp": "삼성중공업", "path": "II-4"}}
+{"question_id": "HLD-026", "kind": "section", "question": "삼성화재의 주요 제품 및 서비스는?", "expect_section": "II-2", "expect_abstain": false, "meta": {"corp": "삼성화재", "path": "II-2"}}
+{"question_id": "HLD-027", "kind": "section", "question": "세아베스틸지주의 배당 정책은?", "expect_section": "III-6", "expect_abstain": false, "meta": {"corp": "세아베스틸지주", "path": "III-6"}}
+{"question_id": "HLD-028", "kind": "section", "question": "셀트리온의 계열회사 현황은?", "expect_section": "IX", "expect_abstain": false, "meta": {"corp": "셀트리온", "path": "IX"}}
+{"question_id": "HLD-029", "kind": "section", "question": "시프트업의 사업의 개요를 알려줘", "expect_section": "II-1", "expect_abstain": false, "meta": {"corp": "시프트업", "path": "II-1"}}
+{"question_id": "HLD-030", "kind": "section", "question": "신한지주의 계열회사 현황은?", "expect_section": "IX", "expect_abstain": false, "meta": {"corp": "신한지주", "path": "IX"}}

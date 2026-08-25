@@ -94,13 +94,18 @@ def load_config() -> Config:
         bm25_b=_env_float("BM25_B", 0.75),
         rrf_k=_env_int("RRF_K", 60),
         top_k=_env_int("SEARCH_TOP_K", 8),
-        hybrid_search=os.environ.get("DART_HYBRID", "").lower() in ("1", "true", "on"),
+        # 🔴 기본 ON (2026-08-25). 골든셋 186/186 무회귀 + 검색 폴백 품질 개선을
+        #    실측한 뒤 전환했다. 벡터 스토어나 CLOVA 키가 없으면 서버가 자동으로
+        #    BM25 단독으로 강등하므로(`api/server.py`), 켜두는 쪽이 안전하다 —
+        #    끄고 싶으면 `DART_HYBRID=0`. 실제 활성 여부는 `/ready`의 notes가 말한다.
+        hybrid_search=os.environ.get("DART_HYBRID", "1").lower() not in ("0", "false", "off"),
         vectors_path=_env_path(
             "DART_VECTORS_PATH", PROJECT_ROOT / "index" / "embeddings.sqlite"
         ),
-        # 골든셋 section 25문항 실측값 (bm25.rrf_fuse docstring의 표 참조)
-        hybrid_rrf_k=_env_int("HYBRID_RRF_K", 10),
-        hybrid_vec_weight=_env_float("HYBRID_VEC_WEIGHT", 2.0),
+        # 🔴 홀드아웃(튜닝 미사용 30문항) 기준으로 고른 값 — 상세는 rrf_fuse docstring.
+        #    골든셋만 보면 k=10/w=2가 더 좋지만 그건 튜닝셋이라 낙관 편향이 있다.
+        hybrid_rrf_k=_env_int("HYBRID_RRF_K", 5),
+        hybrid_vec_weight=_env_float("HYBRID_VEC_WEIGHT", 3.0),
     )
 
 
