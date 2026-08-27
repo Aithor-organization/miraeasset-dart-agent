@@ -87,6 +87,14 @@ class TestV4Forbidden:
                      citation_ids=CITES, requirements=[])
         assert not rep.v4_forbidden, rep.summary()
 
+    def test_blocks_question_echoed_unsupported_assessment(self):
+        """질문에 있던 '개선' 표현은 답변 근거가 아니다."""
+        answer = "매출액은 300,870,903백만원입니다. [C1] 실적이 개선되고 수익성이 회복되었습니다."
+        rep = verify(answer, context=CTX, citation_ids=CITES, requirements=[])
+        assert not rep.ok
+        cleaned = strip_failing_sentences(answer, rep)
+        assert "실적이 개선" not in cleaned
+
 
 class TestV5Placeholder:
     def test_unresolved_slot_blocked(self):

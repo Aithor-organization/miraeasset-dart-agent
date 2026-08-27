@@ -16,6 +16,13 @@ import re
 from dataclasses import dataclass, field
 
 # 금지 표현 (V4) — 과제 금지 조항: 공시에 근거 없는 미래 예측·투자 의견
+# 근거에 없는 주요 평가·변화 단정은 숫자가 없어도 환각이다.
+# 보수적으로 금융 분석에서 자주 악용되는 서술만 검사한다.
+UNSUPPORTED_ASSERTION_TERMS: tuple[tuple[str, str], ...] = (
+    (r"개선|회복|악화|호조|부진|증가세|감소세|상승세|하락세", "근거 없는 성과/추세 단정"),
+    (r"경쟁력이\s*(있|높)|성장성이\s*(있|높)|긍정적|부정적", "근거 없는 평가"),
+)
+
 FORBIDDEN_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"목표\s*주가", "목표주가 제시"),
     (r"(매수|매도|비중\s*확대|비중\s*축소)\s*(를|을)?\s*(추천|권장|의견|제시)", "투자의견 제시"),
@@ -130,9 +137,13 @@ def verify(
         if not _requirement_met(req, answer):
             rep.v3_unmet_requirements.append(req)
 
-    # V4 — 금지 표현
+    # V4 — 금지 표현 및 근거 없는 비수치 단정
     for pat, label in FORBIDDEN_PATTERNS:
         if re.search(pat, answer):
+            rep.v4_forbidden.append(label)
+    ctx_text = context or ""
+    for pat, label in UNSUPPORTED_ASSERTION_TERMS:
+        if re.search(pat, answer) and not re.search(pat, ctx_text):
             rep.v4_forbidden.append(label)
 
     # V5 — 미치환 자리표시자 (D1 슬롯 바인딩 실패 = 생성 실패)
@@ -170,7 +181,7 @@ def strip_failing_sentences(answer: str, rep: VerifyReport) -> str:
             continue
         if any(_norm_num(t) in bad_nums for t in extract_numbers(s)):
             continue
-        if any(re.search(p, s) for p, _ in FORBIDDEN_PATTERNS):
+        if any(re.search(p, s) for p, _ in FORBIDDEN_PATTERNS + UNSUPPORTED_ASSERTION_TERMS):
             continue
         keep.append(s.strip())
     return " ".join(keep)

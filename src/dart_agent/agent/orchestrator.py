@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from .. import counters
@@ -150,7 +151,9 @@ class Orchestrator:
         # 하이브리드 검색 (파일럿) — 둘 다 있어야 doc_search가 RRF 융합한다
         self.vectors = vectors
         self.embedder = embedder
-        self._cache: dict[tuple[str, str], Answer] = {}
+        self._cache: OrderedDict[tuple[str, str], tuple[float, Answer]] = OrderedDict()
+        self._cache_ttl_s = 900.0
+        self._cache_max = 2048
 
     # ── 질의 이해 ───────────────────────────────────────────────────────
     def understand(self, question: str, deadline: float | None = None) -> QuerySpec:
@@ -258,12 +261,31 @@ class Orchestrator:
 
     # ── 실행 ────────────────────────────────────────────────────────────
     def answer(self, question_id: str, question: str) -> Answer:
+        # 🔴 외부 LLM 호출 전 경계: `understand()`의 목차 라우팅도 LLM을 호출할 수 있다.
+        #    그러므로 PII 요청을 도구 조회·LLM 라우팅보다 먼저 차단한다. 이 요청은
+        #    캐시에도 저장하지 않아 민감한 질문을 프로세스 메모리에 오래 남기지 않는다.
+        if pii.is_sensitive_request(question):
+            return Answer(
+                question_id=question_id, question=question,
+                retrieved_context="(민감 입력 보호를 위해 근거 본문을 표시하지 않습니다)",
+                think_trace=("[1] 입력 경계 — 민감 요청 차단 (외부 모델·도구 미호출)\n"
+                             "[5] 결론\n    민감정보 제외 + 회사 단위 정보 안내"),
+                answer=pii.REFUSAL, citations=[], confidence="low",
+                abstained=True,
+                abstain_reason=("pii_request" if pii.is_pii_request(question)
+                                else "sensitive_input"),
+            )
+
         # 🔴 캐시 키는 (question_id, question) 쌍이다. question_id만 쓰면 평가측이
         #    같은 id로 다른 문항을 보낼 때 **이전 답변을 그대로 반환**한다 —
         #    한 번 어긋나면 이후 전 문항이 오답이 되는 실패 모드라 id 단독 키는 금지.
         key = (question_id, question.strip())
-        if key in self._cache:  # AC-API6
-            return self._cache[key]
+        cached = self._cache.get(key)
+        if cached is not None and time.monotonic() - cached[0] < self._cache_ttl_s:
+            self._cache.move_to_end(key)
+            return cached[1]
+        if cached is not None:
+            self._cache.pop(key, None)
         t0 = time.time()
         # 🔴 LLM 예산 데드라인 (SPEC AC-API4 `REQUEST_TIMEOUT_S` 배선).
         #    이 상수는 SPEC에 규정돼 있었으나 **코드 어디서도 읽히지 않았다**
@@ -284,7 +306,10 @@ class Orchestrator:
                 abstained=True, abstain_reason="internal_error", confidence="low",
             )
         ans.latency_ms = int((time.time() - t0) * 1000)
-        self._cache[key] = ans
+        self._cache[key] = (time.monotonic(), ans)
+        self._cache.move_to_end(key)
+        while len(self._cache) > self._cache_max:
+            self._cache.popitem(last=False)
         return ans
 
     def _run(self, question_id: str, question: str,
@@ -377,18 +402,6 @@ class Orchestrator:
         if comp is not None and not comp.ok and q.qtype == T_COMPARE and ab is None:
             ab = Abstention("low_unit_confidence", comp.refused_reason or "연산 불가",
                             available_facts=available)
-
-        # 🔴 PII 질의 차단 (평가지표 6) — 근거가 있어도 개인 식별정보는 제공하지 않는다
-        if pii.is_pii_request(question):
-            trace.append("[4] PII 게이트 발동 — 개인 식별정보 요구 질의")
-            trace.append("[5] 결론\n    개인정보 제외 + 회사 단위 정보 안내")
-            return Answer(
-                question_id=question_id, question=question,
-                retrieved_context="(개인정보 보호를 위해 근거 본문을 표시하지 않습니다)",
-                think_trace="\n".join(trace), answer=pii.REFUSAL,
-                citations=[], confidence="low",
-                abstained=True, abstain_reason="pii_request",
-            )
 
         ctx, cites = self._build_context(facts, events, sections, search_hits, chain)
 

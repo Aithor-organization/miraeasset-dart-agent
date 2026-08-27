@@ -26,6 +26,15 @@ _PHONE = re.compile(r"\b0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}\b")
 PII_SECTION_PREFIXES = ("VIII",)
 PII_SECTION_TITLES = re.compile(r"임원\s*및\s*직원|임원\s*현황|직원\s*현황|임원의\s*보수|개인별\s*보수")
 
+# 외부 모델에 전송하면 안 되는 자격증명 형태. 일반적인 "API 키 정책" 문의는
+# 차단하지 않고, 값이 실제로 포함된 경우만 잡는다.
+_SECRET_VALUE = re.compile(
+    r"(?ix)"
+    r"(?:\bsk-[a-z0-9_-]{20,}\b|\bAKIA[0-9A-Z]{16}\b|"
+    r"\b(?:api[_ -]?key|secret|password|access[_ -]?token)\s*[:=]\s*[^\s]{8,}|"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+)
+
 # 개인정보를 직접 요구하는 질의
 PII_REQUEST = re.compile(
     r"생년월일|생일|나이|출생|주민\s*등록|주민\s*번호|성별|"
@@ -37,6 +46,11 @@ PII_REQUEST = re.compile(
 def is_pii_request(question: str) -> bool:
     """개인정보를 직접 요구하는 질의인지 판정."""
     return bool(PII_REQUEST.search(question or ""))
+
+
+def is_sensitive_request(question: str) -> bool:
+    """PII 또는 실제 자격증명 값을 포함해 외부 전송하면 안 되는 입력인지 판정."""
+    return is_pii_request(question) or bool(_SECRET_VALUE.search(question or ""))
 
 
 def is_pii_section(path: str | None, title: str | None) -> bool:
@@ -80,7 +94,7 @@ def mask(text: str) -> str:
 
 
 REFUSAL = (
-    "임원·직원의 생년월일·성별 등 개인 식별정보는 제공하지 않습니다. "
+    "개인 식별정보 또는 자격증명은 처리·전송하지 않습니다. "
     "공시에 포함된 정보라도 개인정보에 해당하는 항목은 응답에서 제외합니다.\n\n"
     "회사 단위 정보(임원 수, 직원 수, 보수 총액, 사업 내용 등)는 답변 가능합니다."
 )
