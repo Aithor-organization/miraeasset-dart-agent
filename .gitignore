@@ -43,6 +43,7 @@ data/
 .DS_Store
 *.log
 *.tmp
+release-manifest.json
 
 # 평가 실행 결과 (재생성 가능 — 골드셋 자체는 커밋한다)
 #

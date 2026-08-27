@@ -64,6 +64,8 @@ class Config:
     #    실측으로 정한 값이라 같이 묶으면 한쪽을 고칠 때 다른 쪽이 깨진다.
     hybrid_rrf_k: int
     hybrid_vec_weight: float
+    # 런타임 통제: 운영에서 LLM을 즉시 끄는 물리적 kill switch
+    llm_enabled: bool
 
     @property
     def has_llm(self) -> bool:
@@ -117,6 +119,7 @@ def load_config() -> Config:
         #    골든셋만 보면 k=10/w=2가 더 좋지만 그건 튜닝셋이라 낙관 편향이 있다.
         hybrid_rrf_k=_env_int("HYBRID_RRF_K", 5),
         hybrid_vec_weight=_env_float("HYBRID_VEC_WEIGHT", 3.0),
+        llm_enabled=os.environ.get("LLM_ENABLED", "1").lower() not in ("0", "false", "off"),
     )
 
 

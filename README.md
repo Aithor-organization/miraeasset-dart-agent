@@ -10,6 +10,34 @@
 
 ---
 
+## 신뢰·보안 요약
+
+이 시스템은 **공개 DART 코퍼스를 대상으로 한 익명·읽기 전용 QA**다. 송금·주문·메일·공시 발송·외부 데이터 변경 기능은 없으며, 모델이 임의 도구를 선택해 실행하는 자율 루프도 없다. 금융이라는 도메인명보다 실제 부수효과와 데이터 경계를 기준으로 통제한다.
+
+| 보장 목표 | 코드 수준 통제 | 확인 지점 |
+|---|---|---|
+| 숫자 환각 억제 | 수치·계산은 SQLite fact와 `fact_id` operand만 사용 | `agent/tools.py`, 검증기 V1 |
+| 근거 없는 서술 억제 | 인용 실재성·요구사항·금지표현·미해결 슬롯을 결정론적으로 검사 | `agent/verifier.py` V1~V5 |
+| 예측·투자 권유 차단 | 미래 전망·목표주가·매수/매도 요구를 코드에서 기권 | `agent/abstention.py` |
+| PII·secret 외부 전송 차단 | 질의 해석·검색·LLM 호출 전에 민감 입력 거부 | `agent/pii.py`, `agent/orchestrator.py` |
+| 공급자 경계 | 허용된 Naver HTTPS endpoint와 `HCX-*`만 허용 | `config.py` |
+| 장애 격리 | 120초 요청 예산·bounded retry·Stub 폴백·`LLM_ENABLED=0` kill switch | `llm/`, `RUNBOOK.md` |
+| 메모리 고갈 방지 | 응답 캐시 TTL/LRU, rate-limit client 상태 hard bound | `orchestrator.py`, `api/ratelimit_mw.py` |
+| 로그 유출 억제 | 로그 기록 전에 전화·이메일·주민번호·자격증명 마스킹 | `observability.py` |
+| 재현 가능한 평가 | 동결 baseline의 SHA-256·문항 수를 검증한 뒤 5축 gate 실행 | `eval/baseline/v1.0.0/`, `scripts/gate.sh` |
+
+모든 정상 응답은 출처와 검증 상태를 포함한다. 요청에는 `trace_id`를 부여하고, 관측에는 원문 대신 `question_hash`를 사용한다. 상세 자율성·데이터·HITL/MCP 경계는 [`docs/SCOPE_CARD.md`](docs/SCOPE_CARD.md), 장애 대응과 롤백은 [`RUNBOOK.md`](RUNBOOK.md)에 있다.
+
+### 신뢰 수준을 읽는 법
+
+- **현재 코드 검증**과 **과거 전체 인덱스 실측**을 구분한다.
+- 운영 인덱스가 없는 환경에서 인덱스 의존 골든셋·검색 A/B·부하 결과를 재현했다고 주장하지 않는다.
+- `eval/goldset.jsonl`은 작업용 호환 경로이고, 릴리스 기준은 hash로 동결된 `eval/baseline/v1.0.0/manifest.json`이다.
+- constrained decoding, OTel backend, 외부 uptime monitor는 현재 필수 경로가 아니다. 출력 화이트리스트·결정론 검증·Docker readiness가 현재 통제다.
+- 컨테이너 non-root 전환, TLS 종단, 실제 공인 endpoint 검증은 배포 환경에서 완료해야 하는 잔여 작업이다.
+
+---
+
 ## 0. 평가용 API End-point
 
 <!-- 🔴 제출 필수 항목. 배포 완료 후 아래 <공인IP>를 실제 값으로 교체할 것. -->
@@ -70,6 +98,9 @@ curl -G localhost:8000/answer \
 
 # 5) 테스트
 python3 -m pytest
+
+# 6) 릴리스 재현성 manifest 생성
+python3 scripts/release_manifest.py --out release-manifest.json
 ```
 
 ### 환경변수
@@ -78,7 +109,9 @@ python3 -m pytest
 |---|---|---|
 | `CLOVA_API_KEY` | (없음) | HyperCLOVA X 키. **없으면 StubProvider로 폴백**하고 서버는 계속 동작 |
 | `CLOVA_BASE_URL` | `https://clovastudio.stream.ntruss.com/v1/openai` | OpenAI 호환 엔드포인트 |
-| `CLOVA_CHAT_MODEL` | `HCX-007` | 128K ctx · function calling · structured output · thinking |
+| `CLOVA_CHAT_MODEL` | `HCX-007` | 허용된 HCX 모델 ID (provider revision은 릴리스 평가로 감시) |
+| `LLM_ENABLED` | `1` | `0`이면 전역 kill switch: 결정론 경로만 사용 |
+| `TOKEN_BUDGET` | `4000` | 평가 게이트 문항당 토큰 상한 |
 | `CLOVA_EMBEDDING_MODEL` | `bge-m3` | 8,192 tokens / 1024 dim |
 | `DART_CORPUS_ROOT` | `docs/3.공시/corpus` | 코퍼스 경로 |
 | `DART_DB_PATH` | `index/dart.sqlite` | Fact Store |
@@ -105,7 +138,8 @@ GET /health · /ready · /meta
   "think_trace": "[1] 질의 해석 … [2] 계획 … [3] 도구 실행 … [4] 검증 … [5] 결론",
   "answer": "삼성전자의 2024년 연결기준 매출액은 300,870,903백만원(300.9조원)입니다 [C1].",
   "citations": [{"id": "C1", "doc_id": "...", "rcept_no": "...", "section": "III-2-2", "source": "xbrl"}],
-  "confidence": "high", "abstained": false, "verification": "검증 통과", "latency_ms": 9
+  "confidence": "high", "abstained": false, "verification": "검증 통과", "latency_ms": 9,
+  "trace_id": "b2a9…", "question_hash": "54dce1a9f2b0d8c1"
 }
 ```
 
@@ -275,7 +309,7 @@ src/dart_agent/
 scripts/build_index.py · run_server.py
 specs/SPEC.md · specs/TASKS.md          실행 가능 명세 + 태스크 DAG
 proposal/                               기술명세서 · MVP 제안서 · 조사 근거
-tests/                                  302 tests
+tests/                                  pytest 단위·계약·회귀 테스트
 ```
 
 ---
@@ -285,8 +319,8 @@ tests/                                  302 tests
 | 항목 | 상태 |
 |---|---|
 | **골드셋** | **과거 전체 인덱스 실행: 186/186** (`eval/goldset.jsonl`, **10유형**). 현재 릴리스는 운영 인덱스 주입 후 재검증 필요. |
-| **릴리즈 게이트** | **5축 전부 통과** — `./scripts/gate.sh` (아래 표) |
-| 테스트 | **과거 전체 인덱스 실행: 326건 통과**. 현재 환경의 인덱스 의존 결과는 별도 검증한다. |
+| **릴리즈 게이트** | `./scripts/gate.sh` — 동결 baseline manifest·quality·safety·regression·latency·cost 검증 |
+| 테스트 | **현재 소스 검증: 282 passed, 68 skipped**(운영 인덱스 부재). 과거 전체 인덱스 실행은 326건 통과. |
 | **인덱스** | **전체 4,204건 · 파싱 성공률 100%** — 섹션 112,797 · 재무 사실 2,021,894 · 이벤트 3,150 |
 | 정답 대조 | 삼성전자 300.9조 / SK하이닉스 영업이익 23.5조 / 기아 107.4조 / POSCO홀딩스 72.7조 |
 | API 계약 | 실 HTTP 전수 200 · 5필드 · abstention 7종 · **경계 6종(빈입력·810자 등) 계약 유지** |

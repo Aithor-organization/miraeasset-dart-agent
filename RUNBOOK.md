@@ -145,7 +145,7 @@ pkill -f run_server.py && python3 run_server.py    # 재기동
 python3 eval/score.py --report /tmp/rollback_check.json   # 골든셋으로 확인
 ```
 
-**롤백 판단 기준**: 골든셋 186문항 중 **179 미만**이면 되돌린다(기준선 186/186, 허용 4%).
+**롤백 판단 기준**: 동결 baseline manifest의 hash·문항 수가 일치하고 **186/186 전부 통과**해야 한다. 한 문항이라도 실패하거나 safety/regression 위반이 1건이라도 있으면 되돌린다.
 
 🔴 **채점 전 rate limit을 올려라** — 서버는 클라이언트당 분당 60요청을 막는다. 채점기는
 그보다 빨리 던지므로 60문항 이후가 전부 429가 되고, 그것이 **"기권"으로 집계되어 회귀처럼
@@ -156,8 +156,7 @@ DART_HYBRID=1 RATE_LIMIT_PER_MIN=100000 python3 run_server.py   # 채점 전용
 ```
 
 ⚠️ 운영 기동에는 붙이지 마라 — 60은 주최측 호출 폭주로부터 서버를 지키는 값이다.
-프레임워크 `eval-audit` 게이트 4축 중 quality 허용치는 0%이지만, 단일 실행의 LLM 변동을
-감안해 4%를 둔다 — **이 완화는 의도적이며 그 사실을 여기 남긴다**.
+LLM 변동이 있더라도 결정론 경로가 정답 주체이므로 quality 완화는 두지 않는다. 원인 분석에는 확장·진단 세트를 사용하고, 동결 baseline은 릴리스 차단 기준으로 유지한다.
 
 ---
 

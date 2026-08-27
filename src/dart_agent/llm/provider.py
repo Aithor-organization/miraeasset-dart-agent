@@ -58,7 +58,7 @@ def build_providers(cfg) -> tuple[LLMProvider, EmbeddingProvider | None, list[st
     키가 없으면 embedding은 None이고, 검색은 BM25 단독으로 동작한다 (AC-R5).
     """
     notes: list[str] = []
-    if cfg.has_llm:
+    if cfg.has_llm and cfg.llm_enabled:
         from .clova import ClovaEmbeddingProvider, ClovaProvider
 
         return (
@@ -69,9 +69,14 @@ def build_providers(cfg) -> tuple[LLMProvider, EmbeddingProvider | None, list[st
 
     from .stub import StubProvider
 
-    notes.append(
-        "CLOVA_API_KEY 미설정 → StubProvider 사용. "
-        "결정론 경로(fact/section/event/compute)는 정상 동작하나 "
-        "LLM 서술 생성·벡터 검색·리랭킹은 비활성입니다."
-    )
+    if cfg.has_llm and not cfg.llm_enabled:
+        notes.append(
+            "LLM_ENABLED=0 → 전역 LLM kill switch 활성화. 결정론 경로만 사용합니다."
+        )
+    else:
+        notes.append(
+            "CLOVA_API_KEY 미설정 → StubProvider 사용. "
+            "결정론 경로(fact/section/event/compute)는 정상 동작하나 "
+            "LLM 서술 생성·벡터 검색·리랭킹은 비활성입니다."
+        )
     return StubProvider(), None, notes
