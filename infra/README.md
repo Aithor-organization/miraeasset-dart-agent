@@ -153,8 +153,30 @@ curl -sG "http://$IP/answer" \
 
 ## 파기
 
+🔴 **서버를 먼저 정지시킨다.** 곧바로 `destroy`하면 블록 스토리지에서 막힌다 (2026-09-02 실측):
+
+```
+returnCode 3001008 — The storage is mounted on the server.
+                     Please unmount the storage and try again.
+```
+
+terraform은 의존성 순서상 **스토리지를 서버보다 먼저** 지우려 하는데, 마운트 상태에서는
+NCP가 거부한다. 문제는 그 시점에 **공인 IP가 이미 제거돼 SSH로 umount할 수 없다**는 것이다.
+
+⚠️ 더 나쁜 것은 이것이 **부분 파기 상태**를 남긴다는 점이다 — 실측에서 공인 IP와 ACG 규칙은
+사라졌는데 서버는 살아서 과금이 계속됐다. 여기서 손을 떼면 접근도 안 되는 서버가 돌아간다.
+**끝까지 진행할 것.**
+
 ```bash
+# 1) 서버 정지 (콘솔에서 눌러도 된다). 정지되면 스토리지가 자동으로 풀린다.
+#    IP가 없어 SSH가 안 되므로 API/콘솔이 유일한 경로다.
+#    server_instance_no는 `terraform output server_instance_no`
+
+# 2) stopped 확인 후
 terraform destroy
+
+# 3) 잔존 확인 — 비어 있어야 한다
+terraform state list
 ```
 
 **과금이 즉시 멈춘다.** 리허설이 끝나면 바로 실행할 것.
