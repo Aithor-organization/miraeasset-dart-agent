@@ -13,6 +13,13 @@ terraform.tfvars
 # 로그인 키
 *.pem
 
+# 배포용 SSH 키페어 (2026-09-02 리허설에서 신설)
+#   NCP는 root **비밀번호** 인증이 기본이라, 키 기반 접속을 쓰려면 init script로
+#   공개키를 주입해야 한다. 개인키는 절대 커밋 금지. 공개키는 비밀이 아니지만
+#   짝이 없으면 쓸모가 없으므로 함께 제외한다.
+deploy-key
+deploy-key.pub
+
 # 계획 산출물
 *.tfplan
 crash.log

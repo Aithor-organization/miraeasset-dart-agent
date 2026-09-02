@@ -37,7 +37,11 @@
 `server_image_number`와 `server_spec_code`는 **리전·시점에 따라 바뀐다.**
 콘솔 → **Server → 서버 생성** 화면에서 실제 값을 확인한다.
 
-목표 사양은 주최측 권장인 **High-CPU 2vCPU / 4GB / 20GB**다.
+목표 사양은 주최측 권장인 **High-CPU 2vCPU / 4GB**다 (`c2-g3`, 2026-09-02 apply로 실재 확인).
+
+🔴 **디스크는 별도다.** 이미지 기본 루트가 **10GB**이고 OS가 5.7GB를 쓴다 — 인덱스 3.7GB가
+들어가지 않는다. `ncloud_server.base_block_storage_size`는 provider에서 read-only라 키울 수
+없으므로 `ncloud_block_storage`(기본 30GB)를 붙여 `/data`에 마운트한다.
 
 > 값을 비워두면 `terraform plan`이 **실패한다.** 의도된 동작이다 —
 > 틀린 값으로 조용히 다른 사양이 뜨는 것보다 명시적으로 막는 편이 낫다.
@@ -47,7 +51,7 @@
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
-$EDITOR terraform.tfvars     # 키 + 사양 코드 + admin_cidr 채우기
+$EDITOR terraform.tfvars     # 사양 코드 + admin_cidr 채우기 (키는 .env → 환경변수)
 ```
 
 `admin_cidr`은 **본인 IP**로 지정한다. 전체 개방(`0.0.0.0/0`)이면 validation이 막는다.
@@ -56,11 +60,31 @@ $EDITOR terraform.tfvars     # 키 + 사양 코드 + admin_cidr 채우기
 curl -s ifconfig.me     # 본인 공인 IP 확인 → "1.2.3.4/32" 형식으로 기입
 ```
 
+🔴 **공인 IP는 바뀐다.** 2026-09-02 리허설에서 tfvars의 `admin_cidr`이 옛 IP로 남아 있었고,
+그대로 배포했으면 3.7GB 인덱스 전송 단계에서 SSH가 막혔다. **apply 직전에 매번 대조할 것.**
+
+### 4. 배포용 SSH 키페어 🔴
+
+```bash
+cd infra
+ssh-keygen -t ed25519 -N "" -C "dart-agent-deploy" -f deploy-key
+```
+
+**NCP의 기본 접속은 root 비밀번호다** — `ncloud_login_key`는 SSH 키가 아니라 그 비밀번호를
+복호화하는 용도다. 평가 기간에 비밀번호를 손으로 넣을 수 없으므로, init script가 부팅 시
+이 공개키를 주입해 키 기반 접속을 만든다.
+
+⚠️ `deploy-key*`는 `.gitignore` 대상이라 **clone 직후에는 없다.** 만들지 않으면
+`terraform validate`부터 `file()` 해석에서 실패한다.
+
 ---
 
 ## 실행
 
 ```bash
+set -a && . ../.env && set +a
+export NCLOUD_ACCESS_KEY="$NCP_ACCESS_KEY" NCLOUD_SECRET_KEY="$NCP_SECRET_KEY"
+
 terraform init
 terraform plan      # 🔴 무엇이 만들어지는지 반드시 눈으로 확인
 terraform apply
@@ -70,22 +94,60 @@ terraform apply
 
 ### 이어지는 작업
 
+> 🔴 아래는 2026-09-02 리허설에서 **전 단계 실측한 절차**다. 총 15분 내외
+> (인덱스 전송 205초 · 이미지 전송 43초 · 서버 생성 3분 35초).
+
 ```bash
-# 1) 인덱스 전송 (3.9GB)
-ssh root@<공인IP> "mkdir -p /data/index"
-scp index/dart.sqlite root@<공인IP>:/data/index/
+IP=<공인IP>
+SSH="ssh -i deploy-key -o StrictHostKeyChecking=no root@$IP"
 
-# 2) Docker 실행 — 외부 80 → 컨테이너 8000
-docker run -d --name dart-agent --restart always \
-  -p 80:8000 -v /data:/data -e CLOVA_API_KEY=nv-... dart-agent
+# 1) 데이터 볼륨 마운트 (1회) — 루트 디스크 10GB로는 인덱스가 안 들어간다
+#    실측: 루트 9.8G 중 여유 3.6G < 인덱스 3.7G. 그래서 30GB 볼륨을 따로 붙인다.
+$SSH 'mkfs.ext4 -q -F /dev/vdb && mkdir -p /data \
+      && echo "/dev/vdb /data ext4 defaults,nofail 0 2" >> /etc/fstab \
+      && mount -a && mkdir -p /data/index && df -h /data'
 
-# 3) 계약 검증
-curl -G "http://<공인IP>/answer" \
+# 2) 인덱스 전송 — 🔴 3개 파일 전부 (dart.sqlite만 올리면 하이브리드가 죽는다)
+scp -i deploy-key index/dart.sqlite index/bm25.pkl index/embeddings.sqlite root@$IP:/data/index/
+
+# 3) 이미지 — 🔴 x86_64로 빌드해야 한다 (맥은 arm64라 그냥 build하면 exec format error)
+docker buildx build --platform linux/amd64 -t dart-agent:amd64 --load ..
+docker save dart-agent:amd64 | gzip -1 | $SSH 'gunzip | docker load'
+
+# 4) 실행 — 🔴 DART_VECTORS_PATH 필수. 빠뜨리면 앱이 컨테이너 안 /app/index/를 보고
+#    못 찾아서 **에러 없이 BM25 단독으로 강등**된다. /ready 의 notes 로 확인할 것.
+$SSH "docker run -d --name dart-agent --restart always -p 80:8000 -v /data:/data \
+  -e CLOVA_API_KEY=nv-... \
+  -e DART_VECTORS_PATH=/data/index/embeddings.sqlite \
+  dart-agent:amd64"
+
+# 5) 검증 — ready:true + 하이브리드 ON 확인 후 계약 호출
+curl -s  "http://$IP/ready"
+curl -sG "http://$IP/answer" \
   --data-urlencode "question_id=Q-001" \
   --data-urlencode "question=삼성전자의 2024년 연결기준 매출액은?"
 
-# 4) README.md §0의 <공인IP> 교체  ← 제출 필수
+# 6) 제출 — 둘 다 해야 한다
+#    a. README.md §0의 <공인IP> 교체
+#    b. Endpoint 제출 구글폼 기입 (공지 2026-09-01, 기한 09.06 23:59)
 ```
+
+### 평가 기간 운영 — 정지/기동으로 크레딧을 아낀다
+
+2026-09-02 실측: **서버를 정지해도 공인 IP가 유지된다** (IP 리소스가 서버에 계속 부착됨).
+`terraform plan`도 정지 상태를 drift로 보지 않는다(`No changes`). 재기동 후에는
+`restart always` + fstab 덕에 **SSH 개입 없이 10초 만에 서비스가 복구**된다.
+
+공지 [서버 구성] 6항이 *"불가피한 사유에 따른 서버 재기동은 실격 사유가 아니다"* 라고
+명시하므로, 공지된 평가 구간에만 켜두면 된다.
+
+```bash
+# 정지 / 기동 — terraform은 전원 상태를 관리하지 않으므로 콘솔 또는 API를 쓴다
+# (API 서명 예시는 리허설 스크래치 참조. 콘솔에서 눌러도 동일하다)
+```
+
+⚠️ **정지 시 과금이 실제로 멈추는지는 [미확인]**이다. 블록 스토리지 30GB는 정지와
+무관하게 과금될 가능성이 높다. 콘솔 → 마이페이지 → 결제 관리에서 확인할 것.
 
 ---
 
@@ -133,8 +195,10 @@ terraform destroy
 | `terraform fmt` | ✅ 통과 |
 | `terraform init` | ✅ 통과 |
 | **`terraform validate`** | ✅ **통과 — 전 리소스가 실제 provider 스키마와 대조됨** |
-| **`plan` / `apply` 실행** | ❌ **미실행** — API 키 필요 |
-| 서버 사양 코드 | ❌ **미확인** — 콘솔에서 확인 필요 |
+| **`plan` / `apply` 실행** | ✅ **통과 — 2026-09-02 리허설에서 10 리소스 실제 생성** |
+| 서버 사양 코드 `c2-g3` | ✅ **실재 확인** — apply 성공 (2vCPU / 3GB 가용 / 루트 10GB) |
+| 배포 전 구간 (전송→기동→`/answer`) | ✅ **HTTP 200 실측** — 6.9초, 계약 5필드 |
+| 정지 후 공인 IP 유지 | ✅ **실측** — 재기동 후 동일 IP + 10초 자동 복구 |
 
 > `validate`는 리소스 타입·인자 이름·타입을 provider 스키마와 대조한다.
 > 즉 **오타나 존재하지 않는 인자는 여기서 잡힌다.**

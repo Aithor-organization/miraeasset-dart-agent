@@ -106,3 +106,18 @@ variable "admin_cidr" {
     error_message = "SSH를 전체 개방하지 마세요. 본인 IP/32를 지정하세요."
   }
 }
+
+# 🔴 데이터 볼륨 (2026-09-02 리허설에서 신설)
+#   루트 디스크는 이미지 기본값 10GB로 고정된다 (base_block_storage_size는 read-only).
+#   실측: `df -h /` → 9.8G total / 5.7G used / **3.6G avail**.
+#   인덱스 3.69GB + 이미지 0.73GB가 들어가지 않으므로 별도 볼륨을 붙인다.
+variable "data_volume_size_gb" {
+  description = "인덱스용 데이터 볼륨(GB). /data 에 마운트한다"
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.data_volume_size_gb >= 10
+    error_message = "인덱스 3.7GB + 여유를 담아야 한다. NCP 블록스토리지 최소 단위도 고려할 것."
+  }
+}
