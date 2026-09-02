@@ -223,6 +223,42 @@ def _strip_particle(token: str) -> str:
     return token
 
 
+# 🔴 형태 사전으로는 원리적으로 못 잡는 것들이 있다 (2026-09-02 Gold Set 실측).
+#      "△△전자의 2024년 매출액은?"  → 익명화 기호. △는 한글도 영문도 아니다
+#      "애플의 2024년 매출액은?"      → 2음절 외국 기업명. 접미사가 없다
+#    둘 다 ABS-007/009로 `ambiguous` 기권했다 — 기업을 분명히 지목했는데 되물은 것이다.
+#
+#    그래서 **문장 구조**를 본다. "X의 … <지표>"에서 X가 해석되지 않았다면 사용자는
+#    특정 주체의 지표를 물은 것이고, 그 주체는 우리가 보유하지 않은 기업이다.
+#    ⚠️ 소유격이 없는 질의("2024년 매출액 상위 기업은?")는 걸리지 않는다 — 그쪽은
+#       실제로 대상이 불분명하므로 `ambiguous`가 맞다.
+_POSSESSIVE_SUBJECT = re.compile(
+    r"(?:^|[\s,])([^\s,]{2,12})의(?=[\s])"
+)
+# 소유격 앞자리에 와도 기업이 아닌 것들 — 이게 없으면 "회사의 매출"이 기업명이 된다.
+_NOT_A_COMPANY = frozenset("""
+회사 기업 그룹 계열 당사 자사 해당 위 아래 다음 이번 지난 올해 작년 내년 최근
+전체 각각 우리 상장사 상장기업 대기업 중소기업 코스피 코스닥 시장 업계 산업
+""".split())
+
+
+def detect_possessive_subject(text: str) -> str | None:
+    """"X의 …" 구조에서 해석되지 않은 주체 X를 찾는다.
+
+    `detect_company_mention`이 형태로 못 잡는 경우의 보완 경로다.
+    호출부가 **지표 질의임을 확인한 뒤에만** 쓴다 — 소유격만으로는 근거가 약하다.
+    """
+    for m in _POSSESSIVE_SUBJECT.finditer(text or ""):
+        tok = m.group(1)
+        if tok in _NOT_A_COMPANY or _strip_particle(tok) in _NOT_A_COMPANY:
+            continue
+        # 순수 숫자·연도 표현 제외 ("2024년의 매출")
+        if re.fullmatch(r"[\d년월일분기반기상하半]+", tok):
+            continue
+        return tok
+    return None
+
+
 def detect_company_mention(text: str) -> str | None:
     """질의에서 **기업명처럼 생긴** 토큰을 찾는다. 없으면 None.
 

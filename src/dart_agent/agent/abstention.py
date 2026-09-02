@@ -157,8 +157,17 @@ def decide(
             available_facts=facts,
         )
 
-    # 3) 유니버스 밖 — 기업을 언급했는데 해석 실패
-    if mentions_company and not corp_codes:
+    # 3) 유니버스 밖 — 기업을 **구체적으로 지목**했는데 해석 실패
+    #
+    # 🔴 조건이 `mentions_company`가 아니라 `unknown_company`인 이유 (2026-09-02 정정):
+    #    `mentions_company`는 "기업|회사|사|㈜" 정규식이라 **일반명사에도 켜진다**.
+    #    그래서 대상이 실제로 불분명한 질의까지 out_of_universe로 갔다 —
+    #      "2024년 매출액 상위 **기업**은?" → "해당 기업을 확인할 수 없습니다"
+    #      "**회사**의 2024년 매출액은?"    → 동일
+    #    지목한 적 없는 기업을 못 찾았다고 답하는 셈이라 되묻는 편(ambiguous)이 옳다.
+    #    반대로 `존재하지않는기업㈜의 영업이익은?`처럼 진짜 지목한 경우는
+    #    소유격 경로가 주체를 뽑아내므로 여기서 그대로 잡힌다.
+    if unknown_company and not corp_codes:
         msg = ABSTAIN_MESSAGES["out_of_universe"]
         if unknown_company:
             # 무엇을 못 찾았는지 되짚어준다 — "확인할 수 없습니다"만으로는

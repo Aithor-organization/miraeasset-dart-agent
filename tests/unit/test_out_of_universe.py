@@ -106,3 +106,44 @@ def test_known_company_unaffected():
     """유니버스 안 기업은 corp_codes가 채워지므로 이 경로를 타지 않는다."""
     assert _decide(corp_codes=["00126380"], mentions_company=True,
                    has_facts=True) is None
+
+
+# ── 소유격 주체 감지 (2026-09-02, Gold Set ABS-007/009 실측) ────────────────
+#    형태 사전으로 원리적으로 못 잡는 것들:
+#      "△△전자의 …"  익명화 기호 — △는 한글도 영문도 아니다
+#      "애플의 …"     2음절 외국 기업명 — 접미사가 없다
+#    둘 다 ambiguous로 기권했다. 기업을 지목했는데 되물은 것이라 정보한계 대응 감점.
+from dart_agent.store.alias import detect_possessive_subject
+
+
+@pytest.mark.parametrize("q,expected", [
+    ("△△전자의 2024년 매출액은?", "△△전자"),
+    ("애플의 2024년 매출액은?", "애플"),
+    ("존재하지않는기업㈜의 영업이익은?", "존재하지않는기업㈜"),
+    ("테슬라의 2024년 영업이익은?", "테슬라"),
+])
+def test_possessive_subject_detected(q, expected):
+    assert detect_possessive_subject(q) == expected
+
+
+@pytest.mark.parametrize("q", [
+    "회사의 2024년 매출액은?",          # 일반명사
+    "우리 기업의 매출 추이는?",
+    "상장기업의 평균 부채비율은?",
+    "2024년 매출액 상위 기업은?",       # 소유격 자체가 없다
+    "매출액이 가장 큰 곳은?",
+    "해당 기업의 실적은?",
+])
+def test_possessive_subject_ignores_common_nouns(q):
+    assert detect_possessive_subject(q) is None, q
+
+
+def test_out_of_universe_requires_specific_mention():
+    """🔴 규칙 3은 `mentions_company`가 아니라 `unknown_company`로 발동한다.
+
+    전자는 "기업|회사|사|㈜" 정규식이라 일반명사에도 켜져서, 지목한 적 없는
+    기업을 "확인할 수 없습니다"라고 답했다 (2026-09-02 실측).
+    """
+    ab = _decide(question="2024년 매출액 상위 기업은?",
+                 mentions_company=True, unknown_company=None)
+    assert ab is None or ab.reason != "out_of_universe"

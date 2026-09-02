@@ -134,9 +134,25 @@ class TestAbstention:
         assert a and a.reason == "forbidden_prediction"
 
     def test_out_of_universe(self):
-        a = self._base(question="△△전자 매출액", corp_codes=[], has_facts=False,
-                       top_search_score=0.0)
-        assert a and a.reason in ("out_of_universe", "ambiguous")
+        # 🔴 규칙 3은 2026-09-02부터 `mentions_company`가 아니라 `unknown_company`로
+        #    발동한다. orchestrator가 형태("LG화학") 또는 소유격("△△전자의 …")으로
+        #    주체를 뽑아 넘긴다. 여기서도 실제 경로와 같이 명시해야 계약을 검증한다.
+        #    기대도 함께 좁혔다 — 종전 `in (out_of_universe, ambiguous)`는 둘 중
+        #    무엇이 나와도 통과해서, 정작 문제였던 오라우팅을 잡지 못했다.
+        a = self._base(question="△△전자의 매출액", corp_codes=[], has_facts=False,
+                       top_search_score=0.0, unknown_company="△△전자")
+        assert a and a.reason == "out_of_universe"
+
+    def test_generic_company_word_does_not_claim_out_of_universe(self):
+        """지목 없이 '기업/회사'만 있으면 out_of_universe를 주장하지 않는다.
+
+        `mentions_company`는 "기업|회사|사|㈜" 정규식이라 일반명사에도 켜진다.
+        그것만으로 "해당 기업을 확인할 수 없습니다"라고 답하면, 지목한 적 없는
+        기업을 못 찾았다고 말하는 셈이다 (2026-09-02 실측).
+        """
+        a = self._base(question="2024년 매출액 상위 기업은?", corp_codes=[],
+                       has_facts=False, top_search_score=0.0)
+        assert a is None or a.reason != "out_of_universe"
 
     def test_out_of_period(self):
         a = self._base(question="2019년 매출액", years=[2019], has_facts=False,

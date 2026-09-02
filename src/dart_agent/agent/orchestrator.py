@@ -189,13 +189,7 @@ class Orchestrator:
         #    응답이 나가고 정보한계 대응에서 감점된다 (실측 2026-09-02).
         if not q.corp_codes:
             q.unknown_company = alias.detect_company_mention(question)
-            if q.unknown_company:
-                q.similar_companies = alias.suggest_similar(self.conn, q.unknown_company)
 
-        q.mentions_company = bool(
-            q.corp_codes or q.sector or q.unknown_company
-            or re.search(r"기업|회사|사|㈜|주식회사", question)
-        )
         q.years = parse_years(question)
         q.year, q.doc_subtype = parse_period(question)
         q.scope = parse_scope(question)  # 누적/당기 — 없으면 None (연간 우선 유지)
@@ -203,6 +197,23 @@ class Orchestrator:
         mdef = from_query(question)
         q.metric_key = mdef.key if mdef else None
         q.paths = paths_for(question)
+
+        # 🔴 형태로 못 잡은 주체를 **문장 구조**로 한 번 더 본다 (2026-09-02, Gold Set).
+        #    "△△전자의 매출액은?"(익명화 기호) · "애플의 매출액은?"(2음절 외국 기업명)이
+        #    형태 사전을 빠져나가 ambiguous로 기권했다 — 기업을 지목했는데 되물은 것이다.
+        #    ⚠️ **지표 질의일 때만** 적용한다. 소유격만으로는 근거가 약하고,
+        #       "2024년 매출액 상위 기업은?"처럼 소유격이 없는 질의는 실제로 대상이
+        #       불분명하므로 ambiguous가 맞다.
+        if not q.corp_codes and not q.unknown_company and q.metric_key:
+            q.unknown_company = alias.detect_possessive_subject(question)
+
+        if q.unknown_company:
+            q.similar_companies = alias.suggest_similar(self.conn, q.unknown_company)
+
+        q.mentions_company = bool(
+            q.corp_codes or q.sector or q.unknown_company
+            or re.search(r"기업|회사|사|㈜|주식회사", question)
+        )
 
         # 🔴 규칙이 목차 주소를 못 찾았을 때만 HCX에게 묻는다.
         #    규칙이 맞을 때 부르면 비용·429 위험만 늘고 정확도는 그대로다
