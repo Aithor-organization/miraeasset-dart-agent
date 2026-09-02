@@ -33,6 +33,12 @@ def main() -> int:
     uvicorn.run(
         "dart_agent.api.server:app",
         host=host, port=port, workers=workers, log_level=os.environ.get("LOG_LEVEL", "info"),
+        # 🔴 질의는 GET 쿼리로 온다 — 한글은 URL 인코딩에서 1자당 9바이트가 되므로
+        #    긴 질문이 h11의 요청 라인 상한에 먼저 걸린다.
+        #    실측(2026-09-02, 배포 서버): 한글 2,000자(URL 18KB) 200 → 3,000자(27KB) **400**.
+        #    400은 5xx가 아니라 주최측 재시도를 유발하지 않으므로 그 문항을 그냥 잃는다.
+        #    64KB면 한글 약 7,000자까지 받는다 — 평가 질의가 그보다 길 이유는 없다.
+        h11_max_incomplete_event_size=64 * 1024,
     )
     return 0
 
