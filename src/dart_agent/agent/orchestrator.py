@@ -100,6 +100,11 @@ class QuerySpec:
     # (제외하지 않으면 V3가 항상 실패해 정상 답변이 폐기된다 — 실측 결함).
     verify_requirements: list[str] = field(default_factory=list)
     mentions_company: bool = False
+    # 별칭 해석에 실패했지만 **기업명 형태**로 보이는 토큰 (예: "LG화학").
+    # 있으면 기권 사유가 ambiguous가 아니라 out_of_universe다.
+    unknown_company: str | None = None
+    # 위 토큰과 계열 접두를 공유하는 보유 기업 — 거부 대신 대안을 준다.
+    similar_companies: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -177,8 +182,18 @@ class Orchestrator:
                         ).fetchone()["corp_name"] for c in q.corp_codes
                     ]
 
+        # 🔴 별칭 해석이 실패했을 때만 기업명 **형태**를 본다 (2026-09-02).
+        #    이게 없으면 "LG화학의 주요 위험요인은?"처럼 기업명만 적고 "회사/기업"을
+        #    안 쓴 질의가 기업 미언급으로 분류돼, out_of_universe가 아니라 ambiguous로
+        #    기권한다 — 명시된 기업명을 두고 "어느 기업의 공시를 확인할까요?"라고 되묻는
+        #    응답이 나가고 정보한계 대응에서 감점된다 (실측 2026-09-02).
+        if not q.corp_codes:
+            q.unknown_company = alias.detect_company_mention(question)
+            if q.unknown_company:
+                q.similar_companies = alias.suggest_similar(self.conn, q.unknown_company)
+
         q.mentions_company = bool(
-            q.corp_codes or q.sector
+            q.corp_codes or q.sector or q.unknown_company
             or re.search(r"기업|회사|사|㈜|주식회사", question)
         )
         q.years = parse_years(question)
@@ -373,6 +388,7 @@ class Orchestrator:
             unit_low_confidence=any(f.unit_confidence != "high" for f in facts),
             is_comparison=(q.qtype == T_COMPARE), mentions_company=q.mentions_company,
             available_facts=available,
+            unknown_company=q.unknown_company, similar_companies=q.similar_companies,
         )
         if comp is not None and not comp.ok and q.qtype == T_COMPARE and ab is None:
             ab = Abstention("low_unit_confidence", comp.refused_reason or "연산 불가",

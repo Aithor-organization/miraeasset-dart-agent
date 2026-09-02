@@ -127,12 +127,15 @@ def decide(
     is_comparison: bool = False,
     mentions_company: bool = False,
     available_facts: list[str] | None = None,
+    unknown_company: str | None = None,
+    similar_companies: list[str] | None = None,
 ) -> Abstention | None:
     """abstention 판정. None이면 정상 답변 경로로 진행 (SPEC §6).
 
     판정 순서가 계약이다 — 가장 확정적인 사유를 먼저 본다.
     """
     facts = available_facts or []
+    similar_companies = similar_companies or []
 
     # 1) 금지 요구 — 가장 확정적
     if detect_prediction(question):
@@ -156,10 +159,29 @@ def decide(
 
     # 3) 유니버스 밖 — 기업을 언급했는데 해석 실패
     if mentions_company and not corp_codes:
+        msg = ABSTAIN_MESSAGES["out_of_universe"]
+        if unknown_company:
+            # 무엇을 못 찾았는지 되짚어준다 — "확인할 수 없습니다"만으로는
+            # 사용자가 오탈자인지 미보유인지 구분하지 못한다.
+            msg = (
+                f"'{unknown_company}'은(는) 제공된 공시 데이터에 없습니다. "
+                "본 시스템은 지정된 70개 상장기업의 공시(2023.01~2026.03)만 보유합니다."
+            )
+        followups = ["보유 70개 기업 중 어느 기업의 공시를 확인할까요?"]
+        if similar_companies:
+            # 🔴 거부하고 끝내지 않는다 (AC-AB2). 계열 접두를 공유하는 보유 기업을
+            #    제시하면 사용자가 바로 다음 질의를 만들 수 있다.
+            followups = [
+                "보유 기업 중 관련될 수 있는 곳은 "
+                + ", ".join(similar_companies)
+                + "입니다. 이 중 어느 기업의 공시를 확인할까요?"
+            ]
         return Abstention(
-            "out_of_universe",
-            ABSTAIN_MESSAGES["out_of_universe"],
-            followup_questions=["보유 70개 기업 중 어느 기업의 공시를 확인할까요?"],
+            "out_of_universe", msg,
+            followup_questions=followups,
+            # 🔴 종전에는 이 경로만 available_facts가 비어 있었다 — AC-AB2는
+            #    "확인 가능한 사실을 함께 제시"를 요구하는데 유독 여기서 누락됐다.
+            available_facts=facts,
         )
 
     # 4) 기간 밖
