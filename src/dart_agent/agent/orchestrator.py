@@ -427,7 +427,13 @@ class Orchestrator:
         #    LLM이 수치를 흘리면 여기서 잡히고 문장이 폐기된다.
         #    narrate() 자체도 수치 동일성을 보고 어긋나면 템플릿을 되돌린다 (2중 방어).
         #    (기권 경로는 위에서 이미 return했으므로 여기는 답변이 있는 경우뿐이다)
-        body, narr_why = narrate(self.llm, body, question=question, deadline=deadline)
+        #    🔴 요약형 질의(섹션·시계열·이벤트)는 본문이 공시 표 원문이라 수치가 수십 개다.
+        #       누락 검사를 그대로 적용하면 서술이 매번 폐기돼 표 원문이 그대로 나간다
+        #       (실측 2026-09-02: 누락 9·34·20건). 수치가 곧 답인 T_FACT/T_COMPARE는 제외한다.
+        body, narr_why = narrate(
+            self.llm, body, question=question, deadline=deadline,
+            allow_number_drop=q.qtype in (T_SECTION, T_TIMESERIES, T_EVENT, T_LIFECYCLE),
+        )
         trace.append(f"[3-b] 서술 — {narr_why}")
         # LLM이 붙지 못한 경우를 응답과 카운터 양쪽에 남긴다.
         degraded = "LLM 서술 적용" not in narr_why and "stub" not in narr_why
