@@ -10,10 +10,12 @@
 
 ## 0. 평가용 API End-point
 
-<!-- 🔴 제출 필수 항목. 배포 완료 후 아래 <공인IP>를 실제 값으로 교체할 것. -->
+<!-- 🔴 제출 필수 항목. 2026-09-02 배포 완료 — 아래는 실제 운영 주소다.
+     이 주소는 terraform destroy/apply 시에만 바뀐다. 컨테이너 교체는 주소를 유지한다. -->
+
 
 ```
-http://<공인IP>/answer
+http://49.50.143.143/answer
 ```
 
 | 항목 | 값 |
@@ -27,7 +29,7 @@ http://<공인IP>/answer
 **호출 예**
 
 ```bash
-curl -G "http://<공인IP>/answer" \
+curl -G "http://49.50.143.143/answer" \
   --data-urlencode "question_id=Q-001" \
   --data-urlencode "question=삼성전자의 2024년 연결기준 매출액은?"
 ```
