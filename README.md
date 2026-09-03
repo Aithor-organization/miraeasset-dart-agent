@@ -134,7 +134,7 @@ GET /answer
 |---|---|---|
 | **L1 Fact Store** (SQLite) | XBRL 재무 사실 · 계약/자금조달/지분 이벤트 · 정정 체인 · 별칭 | 수치·집계·비교·순위 |
 | **L2 Section Store** | 법정 목차 주소(`II-3`, `III-2-2` …) 트리 | 문서·섹션 특정 조회 |
-| **L3 검색** | BM25(Kiwi 형태소, **SQLite FTS5 디스크 색인**). 기본 BM25 단독 — 벡터(bge-m3)+RRF(k=60) 하이브리드는 `DART_HYBRID=1` + `embeddings.sqlite`(파일럿, `scripts/embed_sections.py`) 있을 때만 | 위로 닿지 않는 서술형 |
+| **L3 검색** | BM25(Kiwi 형태소, **SQLite FTS5 디스크 색인**) + 벡터(bge-m3) **RRF k=5 w=3 하이브리드가 기본 ON** (2026-08-25 전환, §8 A/B 실측). `embeddings.sqlite` 부재 시 BM25 단독 자동 강등 · 끄려면 `DART_HYBRID=0` | 위로 닿지 않는 서술형 |
 
 ### 핵심 설계
 
@@ -144,7 +144,7 @@ GET /answer
 | D2 | **Address before Search** | 법정 목차가 70개사 동일 → 주소로 직접 조회 후 검색 폴백 |
 | D3 | **Correction-First** | 정정 체인 해소 후 `is_effective=1`만 집계 (거래소공시 정정률 43%) |
 | D4 | **Evidence as Product** | `retrieved_context`·`think_trace`는 로그가 아니라 채점 산출물 |
-| D5 | **Abstain over Guess** | 근거 미달 시 답을 만들지 않는다 (7종 사유) |
+| D5 | **Abstain over Guess** | 근거 미달 시 답을 만들지 않는다 (10종 사유) |
 | D6 | **Platform-Native** | 임베딩·리랭킹까지 CLOVA API로 통일 — "HyperCLOVA X만" 제약 안전판 |
 
 ---
@@ -269,13 +269,15 @@ src/dart_agent/
 ├── parsers/     periodic · exchange · holding · major
 ├── store/       schema.sql · db · repository · alias · corrections
 ├── retrieval/   tokenizer(Kiwi) · fts_index(FTS5 디스크 색인) · bm25(RRF·레거시) · section_map
-├── agent/       tools(6종) · verifier(V1~V5) · abstention · pii · orchestrator
+├── agent/       tools(6종) · verifier(V1~V5) · abstention(10종) · pii
+│             narrate(서술) · route_section(목차 라우팅) · tabular(표→서술) · orchestrator
 ├── llm/         provider · clova(OpenAI 호환) · stub
 └── api/server.py
 scripts/build_index.py · run_server.py
 specs/SPEC.md · specs/TASKS.md          실행 가능 명세 + 태스크 DAG
 proposal/                               기술명세서 · MVP 제안서 · 조사 근거
-tests/                                  302 tests
+eval/          goldset.jsonl(186) · score.py · retrieval_ab.py · load_test.py
+tests/                                  411 tests
 ```
 
 ---
@@ -286,10 +288,10 @@ tests/                                  302 tests
 |---|---|
 | **골드셋** | **186/186 = 100%** (`eval/goldset.jsonl`, **10유형** 전부 만점) |
 | **릴리즈 게이트** | **5축 전부 통과** — `./scripts/gate.sh` (아래 표) |
-| 테스트 | **326건 통과** (`python3 -m pytest`, 전체 색인 기준) |
+| 테스트 | **411건 통과** (`python3 -m pytest`, 전체 색인 기준) |
 | **인덱스** | **전체 4,204건 · 파싱 성공률 100%** — 섹션 112,797 · 재무 사실 2,021,894 · 이벤트 3,150 |
 | 정답 대조 | 삼성전자 300.9조 / SK하이닉스 영업이익 23.5조 / 기아 107.4조 / POSCO홀딩스 72.7조 |
-| API 계약 | 실 HTTP 전수 200 · 5필드 · abstention 7종 · **경계 6종(빈입력·810자 등) 계약 유지** |
+| API 계약 | 실 HTTP 전수 200 · 5필드 · abstention **10종** · **경계 10종(빈입력·2,400자·특수문자·중복 id 등) 배포 서버 실측 계약 유지** |
 | 메모리 | 서버 상주 **44~396 MB = 4 GB의 1~10%** · 기동 0.7~2.4초 |
 | 색인 정합 | FTS5 112,797 = section 112,797 = is_effective 112,797 (누락 0) |
 | HCX 활용 | 골드셋 1회당 **약 200 호출** (서술 + 목차 라우팅) · **문항당 1,195 토큰** |
@@ -319,6 +321,27 @@ quality 186/186 · safety 0건 · regression 0건 · p95 23.3s · cost 1,280 토
 
 > 리포트(`eval/v13.json`)는 `.gitignore` 대상이다 — 실행마다 재생성되는 산출물이지
 > 소스가 아니다. 재현하려면 서버를 띄우고 `./scripts/gate.sh`.
+
+### 골드셋 밖 질의 — 주최측 참고 질의로 3종 보강 (2026-09-03)
+
+골드셋 186문항은 만점이지만 **그 밖의 질의 유형에서 결함이 나왔다.** 주최측 참고 질의
+세트로 두들겨 찾은 3건을 고쳤다 — 골드셋이 100%라는 사실이 커버리지를 증명하지 않는다.
+
+| 질의 | 고치기 전 | 고친 뒤 |
+|---|---|---|
+| "삼성전자 실적 요약해줘" | 표 원문 400자 덤프 | `매출액 133,873,444, 영업이익 57,232,797 …` 서술 (`agent/tabular.py`) |
+| "현대차와 기아 중 어디가 더 성장했어?" | 기아만 답변 | 지표 미특정 역질문 (`no_comparison_metric`) |
+| "부채비율이 위험한 수준이야?" | 표 덤프 | 투자 판단이라 기권 + 확인 가능한 사실 제시 (`forbidden_judgment`) |
+
+🔴 **표 파서를 줄 단위로 쓰면 0건이 나온다.** DB `section.text`에는 개행이 **하나도 없다**
+(실측: 2,750자 / 개행 0). 라벨 인접 스캔으로 바꿨고, 개행 없는 표를 테스트 픽스처에 박아
+줄 기반 재작성이 조용히 되살아나지 못하게 했다.
+
+🔴 **같은 회차에 숨어 있던 버그 하나가 드러났다.** 근거(`retrieved_context`)는 섹션 본문을
+1,200자까지 실었는데 답변 추출은 전문을 보고 있었다. 답변의 수치가 근거에 없으니 V1이
+"근거 없는 수치"로 잡았고, 검증 재시도가 **그 문장을 통째로 지웠다** — "삼성전자 실적 요약"의
+답변이 헤더 한 줄만 남은 것이 그것이다. `SECTION_EVIDENCE_CHARS=2400`으로 양쪽을 같은
+범위에 묶었다 (12개사 실측에서 2,400자면 12/12 손익계산서가 들어온다).
 
 ### 🔴 LLM이 죽어도 정확도는 안 떨어진다 — 실측
 
