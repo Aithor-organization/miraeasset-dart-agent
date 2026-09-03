@@ -163,6 +163,34 @@ def grade(item: dict, resp: dict, elapsed_ms: float | None = None) -> tuple[bool
                 if loser in named:
                     return False, f"승자 오판 ({loser}을 더 크다고 선언)"
 
+        # 🔴 `A는 … B보다 (높|낮)습니다` — **극성이 양방향**이다 (2026-09-03).
+        #
+        #    위 두 패턴은 "더 큰 기업은 X" / "X가 더 큽니다"만 본다. 서술 계층(HCX)이
+        #    쓰는 세 번째 문형이 어디에도 안 걸려 순서 추정으로 떨어졌고, 어순이
+        #    실행마다 바뀌므로 **같은 문항이 통과했다 실패했다** 했다.
+        #
+        #    실측(CMP-002, 정답인데 오답 처리):
+        #      "한미반도체의 매출액은 5,589.2억원으로 …, 이는 현대건설의
+        #       32.7조원보다 **낮습니다**"  → 문두 주어가 **패자**다
+        #
+        #    ⚠️ "보다 높다"만 보면 이 절반을 놓친다. 극성으로 문두 주어의 역할이
+        #       뒤집히므로 두 방향을 함께 판정한다.
+        subj_m = re.match(r"([^\s,.]+?)(?:의|은|는)\s", answer)
+        if subj_m:
+            subj = subj_m.group(1)
+            hi = re.search(r"보다\s*(?:더\s*)?(?:높|큽|크|많|우위)", answer)
+            lo = re.search(r"보다\s*(?:더\s*)?(?:낮|작|적|열위)", answer)
+            if hi and not lo:                       # 문두 주어가 승자
+                if want in subj:
+                    return True, "비교 정확 (보다-높 문형)"
+                if loser in subj:
+                    return False, f"승자 오판 ({loser}을 더 크다고 선언)"
+            elif lo and not hi:                     # 문두 주어가 패자
+                if loser in subj:
+                    return True, "비교 정확 (보다-낮 문형)"
+                if want in subj:
+                    return False, f"승자 오판 ({want}을 더 작다고 선언)"
+
         # 선언 문형이 없을 때만 순서로 추정한다
         if loser in answer and answer.index(loser) < answer.index(want):
             return False, f"순서 역전 의심 ({loser}이 먼저 언급됨)"

@@ -33,6 +33,30 @@ PREDICTION_PATTERNS = (
     r"(지금|현재|이번에)\s*\S{0,3}\s*(사|팔|매수|매도)",
 )
 
+# 재무 건전성·투자 적합성의 **판정**을 요구하는 질의 (2026-09-03, OOD 실측).
+#
+#   "LG에너지솔루션 부채비율이 위험한 수준이야?" → 종전에는 기권하지 않고
+#   요약재무정보 표를 그대로 뱉었다. 공시에는 "위험한 수준"이라는 판정이 없다 —
+#   그건 우리가 만들어낸 투자 의견이므로 근거 기반(지표 4)에서 감점된다.
+#   반대로 기권하면 정보한계 대응(지표 7)에서 가점 대상이 된다.
+#
+# 🔴 사실 조회와 가르는 축은 **서술어 자리의 형용사**다.
+#      기권 O: "부채비율이 **위험한 수준**이야?"   (판정을 물음)
+#      기권 X: "주요 **위험요인**은 무엇인가?"      (공시 기재 항목을 물음)
+#      기견 X: "**위험관리** 정책을 설명해줘"       (섹션명)
+#   그래서 형용사 뒤에 판정 명사(수준·편·상태) 또는 판정 어미(가요·을까·은가)를
+#   요구한다. 명사 단독("위험요인"·"위험관리")은 어느 쪽에도 닿지 않는다.
+JUDGMENT_PATTERNS = (
+    #   위험한 수준 · 안전한 편 · 건전한 상태 · 과도한 수준
+    r"(위험|안전|건전|양호|우량|불안|부실|과도|적정|취약)\w{0,2}\s*(수준|편|상태|상황)",
+    #   안전한가요? · 괜찮을까요? · 건전한가 · 위험하지 않나
+    r"(위험|안전|건전|양호|우량|괜찮|불안|부실|취약)\w{0,3}"
+    r"(까요|나요|가요|은가|는가|한가|을까|ㄹ까|지\s*않)",
+    #   재무구조가 좋아? · 실적이 나쁜가 · 수익성이 우수한가
+    r"(재무|부채|실적|수익성|성장성|안정성|유동성|재무구조)\S{0,3}\s*(이|가)\s*"
+    r"\S{0,4}(좋|나쁘|괜찮|우수|열악|튼튼|허약)",
+)
+
 # 코퍼스 미보유 문서/정보 유형
 UNSUPPORTED_PATTERNS = (
     (r"뉴스|기사|보도", "뉴스·보도 자료"),
@@ -57,8 +81,16 @@ ABSTAIN_MESSAGES = {
     "unsupported_doctype": (
         "해당 정보는 보유 공시 유형(정기공시·주요사항보고서·거래소공시·지분공시)에 포함되지 않습니다."
     ),
+    "forbidden_judgment": (
+        "공시 데이터는 재무 수치와 기재 사항을 제공하지만, 그 수치가 '위험한지'·'양호한지'에 "
+        "대한 판정은 공시에 존재하지 않습니다. 투자 판단에 해당하므로 제공하지 않습니다."
+    ),
     "forbidden_prediction": (
         "공시에 근거가 없는 미래 예측이나 투자 의견은 제공하지 않습니다."
+    ),
+    "no_comparison_metric": (
+        "비교를 요청하셨으나 어떤 지표로 비교할지 질의에서 특정되지 않았습니다. "
+        "공시 데이터로 비교하려면 기준 지표가 필요합니다."
     ),
     "ambiguous": (
         "질의를 확정하기 위해 추가 정보가 필요합니다."
@@ -98,6 +130,10 @@ class Abstention:
 
 def detect_prediction(question: str) -> bool:
     return any(re.search(p, question) for p in PREDICTION_PATTERNS)
+
+
+def detect_judgment(question: str) -> bool:
+    return any(re.search(p, question) for p in JUDGMENT_PATTERNS)
 
 
 def detect_unsupported(question: str) -> str | None:
@@ -144,6 +180,19 @@ def decide(
             ABSTAIN_MESSAGES["forbidden_prediction"],
             followup_questions=[
                 "확인하고 싶은 재무 항목(매출액·영업이익 등)이나 사업 내용을 구체적으로 알려주세요."
+            ],
+            available_facts=facts,
+        )
+
+    # 1-bis) 건전성·적합성 **판정** 요구 — 예측과 같은 층위의 금지 요구다.
+    #        수치는 있지만 "위험한지"는 공시에 없다. 확인 가능한 사실은 함께 준다.
+    if detect_judgment(question):
+        return Abstention(
+            "forbidden_judgment",
+            ABSTAIN_MESSAGES["forbidden_judgment"],
+            followup_questions=[
+                "부채비율·유동비율 등 구체적 재무 수치를 물어보시면 공시 기준으로 답변드립니다.",
+                "해당 기업이 공시에 기재한 위험요인(사업보고서 '위험관리' 항목)을 확인해 드릴까요?",
             ],
             available_facts=facts,
         )
@@ -206,6 +255,30 @@ def decide(
         return Abstention(
             "low_unit_confidence",
             ABSTAIN_MESSAGES["low_unit_confidence"],
+            available_facts=facts,
+        )
+
+    # 5-bis) 비교 질의인데 **비교 축이 없다** (2026-09-03, OOD 실측).
+    #
+    #   "현대차와 기아 중 어디가 더 성장했어?" → 두 기업은 해석됐고 T3_compare로
+    #   분류됐지만 '성장'에 대응하는 지표가 없다. 종전에는 섹션 원문/검색 결과로
+    #   폴백해 **한쪽 기업만** 답하거나 "근거를 참고하세요"만 냈다 — 요구한 비교
+    #   판정은 어느 쪽으로도 나오지 않는다.
+    #
+    #   '성장'을 매출액으로 임의 해석하지 않는다. 그건 우리가 정한 기준이지
+    #   질의가 정한 기준이 아니라서, 맞아도 근거 기반(지표 4)에서 방어할 수 없다.
+    #   역질문이 정답이다 (지표 7이 명시적으로 요구하는 대응).
+    #
+    #   🔴 골드셋 비교계열 75건은 **전부 지표가 특정된다**(2026-09-03 실측) —
+    #      이 규칙은 그 75건에 닿지 않는다.
+    if is_comparison and metric_key is None and len(corp_codes) >= 2:
+        return Abstention(
+            "no_comparison_metric",
+            ABSTAIN_MESSAGES["no_comparison_metric"],
+            followup_questions=[
+                "매출액·영업이익·당기순이익·자산총계·설비투자 중 어떤 지표로 비교할까요?",
+                "비교 기준 연도와 연결/별도 기준도 함께 알려주세요.",
+            ],
             available_facts=facts,
         )
 

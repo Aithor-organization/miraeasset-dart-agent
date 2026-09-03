@@ -22,7 +22,7 @@ from ..retrieval.section_map import (parse_basis, parse_period, parse_scope,
 from ..store import alias
 from . import tools
 from . import pii
-from . import route_section
+from . import route_section, tabular
 from .abstention import Abstention, decide
 from .narrate import narrate
 from .verifier import strip_failing_sentences, verify
@@ -33,6 +33,15 @@ T_FACT, T_SECTION, T_COMPARE, T_EVENT, T_LIFECYCLE, T_TIMESERIES = (
 )
 
 _CITE_ID = re.compile(r"\[(C\d+)\]")
+
+# 🔴 근거(retrieved_context)에 싣는 섹션 본문 길이. **답변 추출도 같은 범위를 쓴다.**
+#    범위가 어긋나면 답변의 수치가 근거에 없어 V1(근거없는 수치)에 걸리고, 검증
+#    재시도가 그 문장을 통째로 지운다 — 실측(2026-09-03): "삼성전자 실적 요약"의
+#    답변이 `삼성전자 분기보고서 (2026.03) 1. [C1]` 한 줄만 남았다.
+#    1200 → 2400: 요약재무정보 표는 재무상태표가 앞에 오므로 1200자에서는 손익
+#    (매출액·영업이익)이 잘린다. 12개사 실측에서 2400자면 12/12 포함된다.
+#    근거 완전성(지표 2)에도 유리하다 — 답변 도출에 쓴 데이터가 근거에 들어간다.
+SECTION_EVIDENCE_CHARS = 2400
 _CMP = re.compile(r"더\s*(큰|많은|높은|작은|적은|낮은)|비교|중\s*어(디|느)|순위|가장\s*(큰|많은|높은)")
 _DELTA = re.compile(r"증감|증가율|감소율|변화율|얼마나\s*(늘|줄|증가|감소)|대비")
 _EVENT_FUND = re.compile(r"자금\s*조달|유상증자|전환사채|CB|BW|EB|신주인수권|교환사채|자기주식")
@@ -589,7 +598,7 @@ class Orchestrator:
             #    평문으로 두면 개인정보가 그대로 나간다 — 채점 대상 산출물이다.
             #    주민번호·이메일·전화는 전 섹션, 생년월일은 PII 섹션 한정
             #    (`_BIRTH`가 회계기간 "2024년 12월"과 형태가 겹친다).
-            body_txt = pii.mask_always(s["text"][:1200])
+            body_txt = pii.mask_always(s["text"][:SECTION_EVIDENCE_CHARS])
             if pii.is_pii_section(s.get("path"), s.get("title")):
                 body_txt = pii.mask(body_txt)
             parts.append(
@@ -703,19 +712,51 @@ class Orchestrator:
             #    사업보고서의 **거의 동일한 원문**이 연달아 출력됐다. 정보량은 1개인데
             #    분량은 3배라 읽는 사람에게는 손해다.
             #    조회가 `base_year DESC, base_month DESC` 정렬이므로 **첫 항목이 최신**이다.
+            #
+            # 🔴 질의가 여러 기업을 지목했으면 **기업당 최소 1건**을 보장한다 (2026-09-03).
+            #    실측: "현대차와 기아 중 어디가 더 성장했어?" → 두 기업 다 해석됐는데
+            #    (T3_compare · corp_names 2건) 답변에는 **기아만** 나왔다. 상한 3건이
+            #    정렬 순서대로 소진돼 현대차 구간에 닿지 못했기 때문이다. 요구한 비교
+            #    대상의 절반이 빠진 것이라 요구사항 충족(지표 3)에서 곧바로 감점된다.
+            want = [n for n in (q.corp_names or []) if n]
+            quota = max(1, 3 // len(want)) if len(want) >= 2 else 3
+            per_corp: dict[str, int] = {}
             seen: set[tuple] = set()
             for s in sections:
-                key = (s.get("corp_name"), s.get("path"))
+                name = s.get("corp_name") or ""
+                key = (name, s.get("path"))
                 if key in seen:
                     continue
+                if len(want) >= 2 and per_corp.get(name, 0) >= quota:
+                    continue
+                # 🔴 본문이 사실상 빈 섹션은 건너뛴다 (2026-09-03). 실측:
+                #    "삼성전자 분기보고서 (2026.03) 2. 연결재무제표:  [C2]"처럼
+                #    제목만 있고 내용이 없는 줄이 답변 상한 3칸 중 하나를 먹었다.
+                #    표 원문이 링크로 대체된 섹션에서 발생한다.
+                if len(re.sub(r"\s+", "", s["text"] or "")) < 40:
+                    continue
                 seen.add(key)
+                per_corp[name] = per_corp.get(name, 0) + 1
                 cid = next((c["id"] for c in cites if c["doc_id"] == s["doc_id"]
                             and c.get("section", "").startswith(s["path"])), "C1")
-                snippet = re.sub(r"\s+", " ", s["text"])[:400]
-                if pii.is_pii_section(s.get("path"), s.get("title")):
-                    snippet = pii.mask(snippet)
-                lines.append(f"{s['corp_name']} {s['report_nm']} {s['title']}: {snippet} [{cid}]")
-                if len(seen) >= 3:
+                head = f"{s['corp_name']} {s['report_nm']} {s['title']}"
+                # 🔴 근거와 **동일 범위**만 본다 — 범위 밖 수치를 답변에 쓰면
+                #    V1이 "근거없는 수치"로 판정해 문장을 지운다 (위 상수 주석).
+                raw = re.sub(r"\s+", " ", s["text"][:SECTION_EVIDENCE_CHARS])
+                # 🔴 표 원문을 그대로 싣지 않는다 (2026-09-03). 이유·한계는 tabular.py.
+                #    추출에 실패하면 None이 오므로 종전 동작(원문 절단)으로 떨어진다.
+                summary = (tabular.summarize(raw, head)
+                           if tabular.looks_tabular(raw) else None)
+                if summary:
+                    lines.append(f"{summary} [{cid}]")
+                else:
+                    snippet = raw[:400]
+                    if pii.is_pii_section(s.get("path"), s.get("title")):
+                        snippet = pii.mask(snippet)
+                    lines.append(f"{head}: {snippet} [{cid}]")
+                if len(seen) >= 3 and (
+                    len(want) < 2 or len(per_corp) >= len(want)
+                ):
                     break
 
         if not lines and hits:
