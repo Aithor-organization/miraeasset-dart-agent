@@ -168,12 +168,23 @@ def _requirement_met(req: str, answer: str) -> bool:
     return hit >= max(1, len(tokens) // 2)
 
 
-def strip_failing_sentences(answer: str, rep: VerifyReport) -> str:
+def strip_failing_sentences(answer: str, rep: VerifyReport, context: str | None = None) -> str:
     """V1/V4 위반 문장을 제거한다 (재생성 실패 시 최후 수단).
 
     문장 단위로 자르고, 근거 없는 수치나 금지 표현을 포함한 문장만 버린다.
+
+    🔴 `context`를 반드시 넘길 것 — 없으면 근거 있는 서술까지 지운다.
+       UNSUPPORTED_ASSERTION_TERMS는 verify()에서 **문맥에 없을 때만** 위반이다.
+       여기서 그 조건을 빼면 제거기가 판정기보다 엄격해져서, 다른 문장의 V1 위반
+       하나 때문에 verify가 통과시킨 "부진"·"증가세" 문장이 통째로 사라진다
+       (2026-09-03 재현). 근거 있는 서술 삭제는 정확성·근거 완전성·요구사항 충족
+       세 지표를 동시에 깎는다.
     """
     bad_nums = {_norm_num(x) for x in rep.v1_ungrounded_numbers}
+    ctx_text = context or ""
+    # 문맥에 이미 등장하는 서술 용어는 근거가 있으므로 제거 대상에서 뺀다.
+    assertion_pats = [p for p, _ in UNSUPPORTED_ASSERTION_TERMS
+                      if not re.search(p, ctx_text)]
     sentences = re.split(r"(?<=[.。!?])\s+|\n+", answer or "")
     keep: list[str] = []
     for s in sentences:
@@ -181,7 +192,9 @@ def strip_failing_sentences(answer: str, rep: VerifyReport) -> str:
             continue
         if any(_norm_num(t) in bad_nums for t in extract_numbers(s)):
             continue
-        if any(re.search(p, s) for p, _ in FORBIDDEN_PATTERNS + UNSUPPORTED_ASSERTION_TERMS):
+        if any(re.search(p, s) for p, _ in FORBIDDEN_PATTERNS):
+            continue
+        if any(re.search(p, s) for p in assertion_pats):
             continue
         keep.append(s.strip())
     return " ".join(keep)

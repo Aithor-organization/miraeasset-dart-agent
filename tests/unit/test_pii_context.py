@@ -94,3 +94,31 @@ class TestNeutralQuestionBypass:
             masked = pii.mask(masked)
         for leak in ("1965년 03월", "010-1234-5678", "hong@x.com"):
             assert leak not in masked, f"{leak} 유출"
+
+
+# ── 법인 주소 오탐 (2026-09-03, aithor 머지 리뷰 실측) ──────────────────────
+#    `주소지`가 전역 패턴이라 "회사의 주소지는 어디인가"가 개인정보로 거절됐다.
+#    법인 주소는 PII가 아니라 공시 정상 항목 — 답변 가능한 질의를 거절하면
+#    정확성(1)·요구사항 충족(3)에서 감점된다.
+import pytest
+
+from dart_agent.agent import pii as _pii
+
+
+@pytest.mark.parametrize("q", [
+    "회사의 주소지는 어디인가",
+    "본점 소재지는 어디인가",
+    "삼성전자 주소를 알려줘",
+    "사업장 주소가 어떻게 되나요",
+])
+def test_company_address_is_not_pii(q):
+    assert not _pii.is_pii_request(q), f"법인 주소 오탐: {q!r}"
+
+
+@pytest.mark.parametrize("q", [
+    "임원의 주소를 알려줘",
+    "대표이사 주소지가 궁금해",
+    "직원 개인 주소를 알려줘",
+])
+def test_person_address_still_blocked(q):
+    assert _pii.is_pii_request(q), f"개인 주소 누락: {q!r}"

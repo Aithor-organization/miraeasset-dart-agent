@@ -510,7 +510,7 @@ class Orchestrator:
             requirements=q.verify_requirements, grounded_values=grounded,
         )
         if not rep.ok:
-            cleaned = strip_failing_sentences(body, rep)
+            cleaned = strip_failing_sentences(body, rep, context=ctx)
             rep2 = verify(cleaned, context=ctx, citation_ids={c["id"] for c in cites},
                           requirements=q.verify_requirements, grounded_values=grounded)
             trace.append(f"[4] 검증 재시도 — 1차: {rep.summary()}")
