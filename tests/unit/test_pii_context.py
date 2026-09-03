@@ -48,6 +48,36 @@ class TestMaskFull:
         assert not pii.is_pii_section("III-2-2", "연결 손익계산서")
 
 
+class TestPreEgressGate:
+    """민감 질의는 `understand()`보다 먼저 끝나므로 LLM으로 나갈 수 없다."""
+
+    def test_sensitive_request_does_not_reach_understand_or_cache(self):
+        from dart_agent.agent.orchestrator import Orchestrator
+
+        orch = object.__new__(Orchestrator)
+        orch.understand = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("민감 요청에서 understand()가 호출되면 안 됩니다")
+        )
+        result = orch.answer("P-1", "삼성전자 임원 생년월일과 연락처를 알려줘")
+
+        assert result.abstained
+        assert result.abstain_reason == "pii_request"
+        assert "외부 모델·도구 미호출" in result.think_trace
+        assert not hasattr(orch, "_cache")
+
+    def test_credential_value_is_sensitive_but_policy_question_is_not(self):
+        from dart_agent.agent.orchestrator import Orchestrator
+
+        assert pii.is_sensitive_request("api_key=abcdefgh12345678로 접속해줘")
+        assert not pii.is_sensitive_request("API 키 보관 정책을 알려줘")
+        orch = object.__new__(Orchestrator)
+        orch.understand = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("자격증명은 외부 호출 경로에 도달하면 안 됩니다")
+        )
+        result = orch.answer("P-2", "api_key=abcdefgh12345678로 접속해줘")
+        assert result.abstain_reason == "sensitive_input"
+
+
 class TestNeutralQuestionBypass:
     """🔴 이 우회가 이 결함의 핵심이다 — 게이트를 통과하는 중립적 질문."""
 

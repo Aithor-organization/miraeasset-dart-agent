@@ -116,3 +116,15 @@ def test_has_llm_reflects_key_presence(cfg_key, expected, monkeypatch):
 
     monkeypatch.setenv("CLOVA_API_KEY", cfg_key)
     assert load_config().has_llm is expected
+
+
+def test_llm_kill_switch_forces_stub(monkeypatch):
+    from dart_agent.config import load_config
+    from dart_agent.llm.provider import build_providers
+
+    monkeypatch.setenv("CLOVA_API_KEY", "nv-test-key")
+    monkeypatch.setenv("LLM_ENABLED", "0")
+    llm, embedding, notes = build_providers(load_config())
+    assert llm.name == "stub"
+    assert embedding is None
+    assert any("kill switch" in note for note in notes)

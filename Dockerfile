@@ -38,7 +38,7 @@ EXPOSE 8000
 
 # 평가기간 상시 가용을 위한 헬스체크 (SPEC §7-3)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+  CMD curl -fsS http://127.0.0.1:8000/ready | grep -q '"ready":true' || exit 1
 
 CMD ["python3", "run_server.py"]
 

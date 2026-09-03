@@ -21,6 +21,7 @@ import logging
 import re
 import sqlite3
 
+from ..observability import question_id as hash_question
 from .bm25 import Doc, SearchHit
 from .tokenizer import Tokenizer, default_tokenizer
 
@@ -166,8 +167,9 @@ class FtsIndex:
         )
         try:
             rows = self.conn.execute(sql, params).fetchall()
-        except sqlite3.OperationalError as e:  # 질의 구문 오류는 무검색으로 강등
-            log.warning("FTS 질의 실패(%s) — 검색 결과 없음으로 처리: %r", e, query)
+        except sqlite3.OperationalError as exc:  # 질의 구문 오류는 무검색으로 강등
+            log.warning("FTS 질의 실패(%s) — query_hash=%s, 검색 결과 없음",
+                        type(exc).__name__, hash_question(query))
             return []
 
         hits = []

@@ -33,6 +33,8 @@ from fastapi.responses import JSONResponse
 # 실측 처리량이 분당 7~18건이므로 60은 정상 평가를 막지 않는다.
 _LIMIT = int(os.environ.get("RATE_LIMIT_PER_MIN", "60"))
 _WINDOW = 60.0
+_MAX_CLIENTS = int(os.environ.get("RATE_LIMIT_MAX_CLIENTS", "10000"))
+_TRUSTED_PROXY = os.environ.get("TRUSTED_PROXY_CIDR", "").strip()
 
 _hits: dict[str, deque[float]] = defaultdict(deque)
 _lock = threading.Lock()
@@ -46,10 +48,14 @@ def _client_key(request: Request) -> str:
        전역 하나가 되기 때문**이다. 위조 시 제한을 우회당하지만, 위조하지 않는
        정상 트래픽은 올바르게 분리된다. 둘 다 나쁘면 덜 나쁜 쪽을 고른다.
     """
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    # XFF는 신뢰 프록시 뒤에서만 사용한다. 공개 서버에서 임의 헤더를
+    # 클라이언트 식별자로 쓰면 제한 우회와 상태 무한 증가가 가능하다.
+    peer = request.client.host if request.client else "unknown"
+    if _TRUSTED_PROXY and peer in {p.strip() for p in _TRUSTED_PROXY.split(",") if p.strip()}:
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            return fwd.split(",")[0].strip()
+    return peer
 
 
 def check(request: Request) -> JSONResponse | None:
@@ -59,6 +65,10 @@ def check(request: Request) -> JSONResponse | None:
     key = _client_key(request)
     now = time.monotonic()
     with _lock:
+        if key not in _hits and len(_hits) >= _MAX_CLIENTS:
+            # 오래된 client bucket부터 제거해 공격자가 상태를 고갈시키지 못하게 한다.
+            oldest = min(_hits, key=lambda k: _hits[k][0] if _hits[k] else now)
+            del _hits[oldest]
         q = _hits[key]
         while q and now - q[0] > _WINDOW:
             q.popleft()

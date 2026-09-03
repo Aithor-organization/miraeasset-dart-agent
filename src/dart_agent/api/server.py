@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from . import ratelimit_mw
 from .. import counters
+from ..observability import RedactingFilter, new_trace_id, question_id as hash_question
 from ..config import load_config
 from ..llm.provider import build_providers
 from ..retrieval.bm25 import load_saved_index  # 레거시 pickle 캐시 폴백용
@@ -25,6 +26,8 @@ from ..agent.orchestrator import Orchestrator
 
 log = logging.getLogger("dart_agent")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RedactingFilter())
 
 app = FastAPI(title="공시 Agent (Disclosure Analyst)", version="0.1.0")
 
@@ -195,6 +198,8 @@ def answer(
     question: str = Query(..., description="질의 원문"),
 ) -> JSONResponse:
     """계약 5필드를 항상 포함해 200으로 응답한다 (AC-API1, AC-API2)."""
+    trace_id = new_trace_id()
+    counters.bump("requests_total")
     question_id = (question_id or "")[:_QID_MAX]
     truncated = len(question or "") > _Q_MAX
     question = (question or "")[:_Q_MAX]
@@ -230,6 +235,17 @@ def answer(
     try:
         ans = orch.answer(question_id, question)
         payload = ans.to_payload()
+        payload["trace_id"] = trace_id
+        payload["question_hash"] = hash_question(question)
+        if payload.get("abstained"):
+            counters.bump("abstentions_total")
+        if payload.get("degraded"):
+            counters.bump("degraded_total")
+        log.info(
+            "answer trace_id=%s question_hash=%s abstained=%s degraded=%s latency_ms=%s",
+            trace_id, hash_question(question), bool(payload.get("abstained")),
+            bool(payload.get("degraded")), payload.get("latency_ms", 0),
+        )
         if truncated:
             # 잘라낸 사실을 숨기지 않는다 — 근거 산출물에 남긴다 (D4).
             payload["think_trace"] = (
@@ -237,11 +253,15 @@ def answer(
             )
         return JSONResponse(status_code=200, content=payload)
     except Exception as exc:  # 최후 방어 — 500 금지
-        log.exception("answer failed: %s", exc)
+        counters.bump("errors_total")
+        # traceback/원문 예외에는 provider 응답이 섞일 수 있으므로 형식명만 기록한다.
+        log.error("answer failed trace_id=%s question_hash=%s error=%s",
+                  trace_id, hash_question(question), type(exc).__name__)
         return JSONResponse(
             status_code=200,
             content={
                 "question_id": question_id, "question": question,
+                "trace_id": trace_id, "question_hash": hash_question(question),
                 "retrieved_context": "(처리 중 오류)",
                 "think_trace": f"[오류] {type(exc).__name__}",
                 "answer": "요청을 처리하는 중 오류가 발생해 답변을 생성하지 못했습니다.",

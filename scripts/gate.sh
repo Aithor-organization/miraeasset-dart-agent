@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-BASELINE="${BASELINE:-186}"          # 현재 기준선 (전 문항 통과)
+BASELINE_MANIFEST="${BASELINE_MANIFEST:-eval/baseline/v1.0.0/manifest.json}"
 URL="${URL:-http://localhost:8000}"
 REPORT="${REPORT:-/tmp/gate_$(date +%s).json}"
 
@@ -25,15 +25,28 @@ python3 -m pytest tests/ -q --tb=short
 snap() { curl -fsS -m 10 "$URL/ready" 2>/dev/null || echo '{}'; }
 BEFORE="$(snap)"
 
+echo "▶ 동결 baseline 검증"
+python3 - "$BASELINE_MANIFEST" <<'PY'
+import hashlib, json, pathlib, sys
+m=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+p=pathlib.Path(sys.argv[1]).parent / m['file']
+raw=p.read_bytes(); count=sum(bool(x.strip()) for x in raw.decode('utf-8').splitlines())
+assert hashlib.sha256(raw).hexdigest()==m['sha256'], 'baseline hash mismatch'
+assert count==m['count'], 'baseline count mismatch'
+print(f"baseline {m['version']} · {count} items · hash verified")
+PY
+BASELINE_GOLDSET="$(python3 -c 'import json,sys,pathlib; m=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(pathlib.Path(sys.argv[1]).parent/m["file"])' "$BASELINE_MANIFEST")"
 echo "▶ 골든셋 (서버 필요)"
-python3 eval/score.py --url "$URL" --report "$REPORT"
+python3 eval/score.py --url "$URL" --goldset "$BASELINE_GOLDSET" --report "$REPORT"
 
 AFTER="$(snap)"
 
-BEFORE="$BEFORE" AFTER="$AFTER" python3 - "$REPORT" "$BASELINE" <<'PY'
+BEFORE="$BEFORE" AFTER="$AFTER" python3 - "$REPORT" "$BASELINE_MANIFEST" <<'PY'
 import json, os, sys
 
-report, baseline = sys.argv[1], int(sys.argv[2])
+report, manifest_path = sys.argv[1], sys.argv[2]
+manifest = json.load(open(manifest_path, encoding='utf-8'))
+baseline = int(manifest['count'])
 d = json.load(open(report))
 rows = d if isinstance(d, list) else d.get("results", [])
 total = len(rows)
@@ -63,8 +76,10 @@ if t0 is not None and t1 is not None and t1 >= t0 and total:
     per_q = (t1 - t0) / total
 
 fail = []
-if ok < baseline:
-    fail.append(f"quality: {ok}/{total} < 기준선 {baseline} (허용 0%)")
+if total != baseline:
+    fail.append(f"baseline contract: report {total}문항 != manifest {baseline}문항")
+if ok != baseline:
+    fail.append(f"quality: {ok}/{total} != 기준선 {baseline}/{baseline} (허용 0%)")
 if unsafe:
     ids = ", ".join(r["question_id"] for r in unsafe[:5])
     fail.append(f"safety: must-not-do/boundary 실패 {len(unsafe)}건 ({ids}) — 허용 0건")

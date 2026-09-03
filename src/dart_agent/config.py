@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
+from urllib.parse import urlparse
 from pathlib import Path
 
 _HERE = Path(__file__).resolve()
@@ -62,6 +64,8 @@ class Config:
     #    실측으로 정한 값이라 같이 묶으면 한쪽을 고칠 때 다른 쪽이 깨진다.
     hybrid_rrf_k: int
     hybrid_vec_weight: float
+    # 런타임 통제: 운영에서 LLM을 즉시 끄는 물리적 kill switch
+    llm_enabled: bool
 
     @property
     def has_llm(self) -> bool:
@@ -70,6 +74,17 @@ class Config:
 
 
 def load_config() -> Config:
+    base_url = os.environ.get(
+        "CLOVA_BASE_URL", "https://clovastudio.stream.ntruss.com/v1/openai"
+    )
+    parsed = urlparse(base_url)
+    if parsed.scheme != "https" or parsed.hostname not in {
+        "clovastudio.stream.ntruss.com", "clovastudio.apigw.ntruss.com"
+    }:
+        raise ValueError("CLOVA_BASE_URL은 허용된 HyperCLOVA HTTPS endpoint여야 합니다")
+    chat_model = os.environ.get("CLOVA_CHAT_MODEL", "HCX-007")
+    if not re.fullmatch(r"HCX-[A-Za-z0-9._-]+", chat_model):
+        raise ValueError("CLOVA_CHAT_MODEL은 HCX 계열만 허용됩니다")
     return Config(
         corpus_root=_env_path("DART_CORPUS_ROOT", DEFAULT_CORPUS),
         db_path=_env_path("DART_DB_PATH", DEFAULT_DB),
@@ -85,10 +100,8 @@ def load_config() -> Config:
         #    (LLM 전면 차단에서도 골든셋 177/177).
         request_timeout_s=_env_int("REQUEST_TIMEOUT_S", 120),
         clova_api_key=os.environ.get("CLOVA_API_KEY") or None,
-        clova_base_url=os.environ.get(
-            "CLOVA_BASE_URL", "https://clovastudio.stream.ntruss.com/v1/openai"
-        ),
-        chat_model=os.environ.get("CLOVA_CHAT_MODEL", "HCX-007"),
+        clova_base_url=base_url,
+        chat_model=chat_model,
         embedding_model=os.environ.get("CLOVA_EMBEDDING_MODEL", "bge-m3"),
         bm25_k1=_env_float("BM25_K1", 1.2),
         bm25_b=_env_float("BM25_B", 0.75),
@@ -106,6 +119,7 @@ def load_config() -> Config:
         #    골든셋만 보면 k=10/w=2가 더 좋지만 그건 튜닝셋이라 낙관 편향이 있다.
         hybrid_rrf_k=_env_int("HYBRID_RRF_K", 5),
         hybrid_vec_weight=_env_float("HYBRID_VEC_WEIGHT", 3.0),
+        llm_enabled=os.environ.get("LLM_ENABLED", "1").lower() not in ("0", "false", "off"),
     )
 
 

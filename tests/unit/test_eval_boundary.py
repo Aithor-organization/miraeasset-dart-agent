@@ -33,6 +33,8 @@ def handler():
     from dart_agent.api import server
 
     server._startup()
+    if not server._STATE.get("ready"):
+        pytest.skip("인덱스가 없는 환경에서는 장문 답변 경계의 실행 경로를 검증할 수 없음")
 
     def call(question: str, question_id: str = "BND") -> dict:
         resp = server.answer(question_id=question_id, question=question)
